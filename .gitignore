@@ -1,0 +1,9 @@
+node_modules/
+apps/mobile-web/.next/
+dist/
+.codex-remote/
+output/
+.DS_Store
+*.sqlite
+*.log
+.claude/worktrees/

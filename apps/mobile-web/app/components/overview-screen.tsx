@@ -27,6 +27,7 @@ import {
   compareThreadsForMobile,
   getMobileThreadPriority
 } from "../lib/mobile-priority";
+import { filterThreadsForQuery } from "../lib/thread-search";
 import { setStoredLastActiveThread } from "../lib/thread-storage";
 import { CodexShell } from "./codex-shell";
 import { NewThreadSheet } from "./new-thread-sheet";
@@ -179,7 +180,9 @@ export function OverviewScreen() {
   const [isCreatingThread, setIsCreatingThread] = useState(false);
   const [showAllProjects, setShowAllProjects] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [threadQuery, setThreadQuery] = useState("");
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
+  const [lastSuccessfulSyncAt, setLastSuccessfulSyncAt] = useState<string | null>(null);
   const inFlightRef = useRef(false);
 
   useEffect(() => {
@@ -205,6 +208,7 @@ export function OverviewScreen() {
           setOverview(nextOverview);
           setCachedOverview(nextOverview);
           setCachedCapabilities(nextOverview.capabilities);
+          setLastSuccessfulSyncAt(new Date().toISOString());
           setError(null);
         }
       } catch (loadError) {
@@ -250,6 +254,11 @@ export function OverviewScreen() {
   const actionRequiredCount =
     overview?.queue.filter((entry) => entry.action_required).length ?? 0;
   const capabilities = overview?.capabilities;
+  const hasThreadSearch = threadQuery.trim().length > 0;
+  const filteredThreads = useMemo(
+    () => filterThreadsForQuery(overview?.threads ?? [], threadQuery),
+    [overview, threadQuery]
+  );
   const latestThread = useMemo(
     () =>
       [...(overview?.threads ?? [])].sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0] ??
@@ -276,7 +285,7 @@ export function OverviewScreen() {
       }
     >();
 
-    for (const thread of overview?.threads ?? []) {
+    for (const thread of filteredThreads) {
       const current =
         groups.get(thread.project_id) ?? {
           projectId: thread.project_id,
@@ -303,10 +312,10 @@ export function OverviewScreen() {
 
       return right.threads[0]?.updated_at.localeCompare(left.threads[0]?.updated_at ?? "") ?? 0;
     });
-  }, [overview]);
+  }, [filteredThreads]);
   const priorityThreads = useMemo(
     () =>
-      (overview?.threads ?? []).filter(
+      filteredThreads.filter(
         (thread) =>
           thread.pending_native_requests > 0 ||
           thread.pending_approvals > 0 ||
@@ -315,10 +324,11 @@ export function OverviewScreen() {
           thread.state === "interrupted" ||
           thread.state === "running"
       ).sort(compareThreadsForMobile),
-    [overview]
+    [filteredThreads]
   );
   const visibleGroups = showAllProjects ? repoGroups : repoGroups.slice(0, 3);
   const hiddenGroupCount = Math.max(repoGroups.length - visibleGroups.length, 0);
+  const matchingThreadCount = filteredThreads.length;
 
   function toggleProject(projectId: string) {
     setExpandedProjects((current) => ({
@@ -391,11 +401,48 @@ export function OverviewScreen() {
         ) : (
         <div className="codex-page-stack">
           {error ? (
-            <section aria-live="assertive" className="codex-status-strip codex-status-strip--stacked tone-danger" role="alert">
+            <section
+              aria-live="assertive"
+              className={`codex-status-strip codex-status-strip--stacked ${
+                overview ? "tone-warning" : "tone-danger"
+              }`}
+              role="alert"
+            >
               <div className="codex-status-strip__copy">
-                <p className="section-label">{isZh ? "连接异常" : "Connection issue"}</p>
-                <strong>{isZh ? "最近对话暂时没有同步成功" : "Recent chats did not sync this time"}</strong>
-                <p>{error}</p>
+                <p className="section-label">
+                  {overview
+                    ? localize(locale, {
+                        zh: "显示缓存内容",
+                        en: "Showing cached chats"
+                      })
+                    : localize(locale, {
+                        zh: "连接异常",
+                        en: "Connection issue"
+                      })}
+                </p>
+                <strong>
+                  {overview
+                    ? localize(locale, {
+                        zh: "最近对话这次没同步成功，先继续显示上一份内容。",
+                        en: "This refresh failed, so the last synced chats are still on screen."
+                      })
+                    : localize(locale, {
+                        zh: "最近对话暂时没有同步成功",
+                        en: "Recent chats did not sync this time"
+                      })}
+                </strong>
+                <p>
+                  {overview
+                    ? localize(locale, {
+                        zh: lastSuccessfulSyncAt
+                          ? `上次成功同步时间：${formatDateTime(locale, lastSuccessfulSyncAt)}。${error}`
+                          : `当前先展示已缓存的聊天列表。${error}`,
+                        en: lastSuccessfulSyncAt
+                          ? `Last successful sync: ${formatDateTime(locale, lastSuccessfulSyncAt)}. ${error}`
+                          : `Showing the cached chat list for now. ${error}`
+                      })
+                    : error}
+                </p>
               </div>
             </section>
           ) : null}
@@ -479,6 +526,56 @@ export function OverviewScreen() {
                 </button>
               ) : null}
             </div>
+          </section>
+
+          <section className="codex-page-card threads-home__search-card">
+            <div className="threads-home__search-row">
+              <label className="codex-form-field threads-home__search-field">
+                <span className="section-label">{isZh ? "查找聊天" : "Find a chat"}</span>
+                <input
+                  className="chrome-input"
+                  onChange={(event) => setThreadQuery(event.target.value)}
+                  placeholder={
+                    isZh
+                      ? "按标题、工作区或仓库路径搜索"
+                      : "Search by title, workspace, or repo path"
+                  }
+                  type="search"
+                  value={threadQuery}
+                />
+              </label>
+              {hasThreadSearch ? (
+                <button
+                  className="chrome-button"
+                  onClick={() => setThreadQuery("")}
+                  type="button"
+                >
+                  {isZh ? "清空" : "Clear"}
+                </button>
+              ) : null}
+            </div>
+            <p className="threads-home__search-note">
+              {localize(locale, {
+                zh: "想找某条旧聊天时，直接搜标题、项目名或仓库路径就行。",
+                en: "Search across chat titles, project names, and repo paths when you need an older thread."
+              })}
+            </p>
+            {hasThreadSearch ? (
+              <div className="codex-inline-pills threads-home__search-meta">
+                <span className="status-dot">
+                  {localize(locale, {
+                    zh:
+                      matchingThreadCount > 0
+                        ? `找到 ${matchingThreadCount} 条聊天`
+                        : "没有找到匹配聊天",
+                    en:
+                      matchingThreadCount > 0
+                        ? `${matchingThreadCount} matching chats`
+                        : "No matching chats"
+                  })}
+                </span>
+              </div>
+            ) : null}
           </section>
 
           <section className="codex-page-section">
@@ -631,8 +728,9 @@ export function OverviewScreen() {
               ) : null}
             </div>
 
-            <div className="codex-list-stack">
-              {visibleGroups.map((group) => {
+            {visibleGroups.length > 0 ? (
+              <div className="codex-list-stack">
+                {visibleGroups.map((group) => {
                 const isExpanded = expandedProjects[group.projectId] ?? false;
                 const visibleThreads = isExpanded ? group.threads : group.threads.slice(0, 2);
                 const hiddenThreadCount = Math.max(group.threads.length - visibleThreads.length, 0);
@@ -727,9 +825,22 @@ export function OverviewScreen() {
                       </div>
                     ) : null}
                   </section>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <section className="codex-empty-state">
+                <p className="eyebrow">{isZh ? "没有匹配" : "No matches"}</p>
+                <h2>
+                  {isZh ? "这次搜索还没有找到聊天。" : "This search does not match any chats yet."}
+                </h2>
+                <p>
+                  {isZh
+                    ? "试试换成项目名、仓库路径，或者清空搜索看看最近同步过的全部对话。"
+                    : "Try a project name, part of the repo path, or clear the search to browse every synced chat again."}
+                </p>
+              </section>
+            )}
           </section>
         </div>
         )}

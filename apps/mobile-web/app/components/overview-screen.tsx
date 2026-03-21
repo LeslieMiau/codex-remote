@@ -59,6 +59,13 @@ function getThreadBadgeLabel(locale: "zh" | "en", thread: CodexThread) {
 }
 
 function describeThreadPreview(locale: "zh" | "en", thread: CodexThread) {
+  if (thread.archived) {
+    return localize(locale, {
+      zh: "这条聊天已归档，需要时仍然可以重新打开。",
+      en: "This chat is archived, but you can still reopen it when needed."
+    });
+  }
+
   if (thread.pending_native_requests > 0) {
     return localize(locale, {
       zh: "Codex 正等你回复，回一句就能继续往下跑。",
@@ -171,6 +178,7 @@ export function OverviewScreen() {
   const [isNewThreadOpen, setIsNewThreadOpen] = useState(false);
   const [isCreatingThread, setIsCreatingThread] = useState(false);
   const [showAllProjects, setShowAllProjects] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
   const inFlightRef = useRef(false);
 
@@ -190,7 +198,9 @@ export function OverviewScreen() {
       }
 
       try {
-        const nextOverview = await getCodexOverview();
+        const nextOverview = await getCodexOverview({
+          includeArchived: showArchived
+        });
         if (!cancelled) {
           setOverview(nextOverview);
           setCachedOverview(nextOverview);
@@ -233,7 +243,7 @@ export function OverviewScreen() {
       if (interval) clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, []);
+  }, [showArchived]);
 
   const runningCount =
     overview?.threads.filter((thread) => thread.state === "running").length ?? 0;
@@ -298,6 +308,7 @@ export function OverviewScreen() {
     () =>
       (overview?.threads ?? []).filter(
         (thread) =>
+          thread.pending_native_requests > 0 ||
           thread.pending_approvals > 0 ||
           thread.pending_patches > 0 ||
           thread.state === "failed" ||
@@ -356,6 +367,15 @@ export function OverviewScreen() {
                 {isZh ? "新聊天" : "New chat"}
               </button>
             ) : null}
+            <button
+              className="chrome-button"
+              onClick={() => setShowArchived((current) => !current)}
+              type="button"
+            >
+              {showArchived
+                ? localize(locale, { zh: "隐藏归档", en: "Hide archived" })
+                : localize(locale, { zh: "显示归档", en: "Show archived" })}
+            </button>
             {isRefreshing ? (
               <span className="status-dot">{isZh ? "同步中" : "Syncing"}</span>
             ) : null}
@@ -540,6 +560,7 @@ export function OverviewScreen() {
                     className={`codex-thread-list-item ${
                       thread.pending_approvals > 0 ||
                       thread.pending_patches > 0 ||
+                      thread.pending_native_requests > 0 ||
                       thread.state === "failed" ||
                       thread.state === "interrupted"
                         ? "is-emphasis"
@@ -640,6 +661,7 @@ export function OverviewScreen() {
                           className={`codex-thread-list-item ${
                             thread.pending_approvals > 0 ||
                             thread.pending_patches > 0 ||
+                            thread.pending_native_requests > 0 ||
                             thread.state === "failed" ||
                             thread.state === "interrupted"
                               ? "is-emphasis"

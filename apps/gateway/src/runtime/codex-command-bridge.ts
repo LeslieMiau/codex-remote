@@ -55,6 +55,14 @@ interface AppServerCursorPage<T> {
   nextCursor?: string | null;
 }
 
+interface AppServerSkill {
+  name?: string;
+  description?: string;
+  shortDescription?: string;
+  displayName?: string;
+  path?: string;
+}
+
 interface AppServerReviewStartResponse {
   reviewThreadId?: string;
   turn?: {
@@ -588,6 +596,30 @@ export class CodexCommandBridge {
           }),
           waitForExit
         ])) as AppServerCursorPage<Record<string, unknown>> | undefined;
+
+        data.push(...(response?.data ?? []));
+        cursor = response?.nextCursor ?? null;
+      } while (cursor);
+
+      return data;
+    });
+  }
+
+  async listSkills(input?: { cwd?: string | null; forceReload?: boolean }) {
+    return this.withClient(async ({ request, waitForExit }) => {
+      const data: AppServerSkill[] = [];
+      let cursor: string | null = null;
+
+      do {
+        const response = (await Promise.race([
+          request("skills/list", {
+            cursor,
+            limit: 200,
+            cwd: input?.cwd ?? undefined,
+            forceReload: input?.forceReload ?? false
+          }),
+          waitForExit
+        ])) as AppServerCursorPage<AppServerSkill> | undefined;
 
         data.push(...(response?.data ?? []));
         cursor = response?.nextCursor ?? null;

@@ -8,6 +8,8 @@ export interface PendingSendImage {
   file_name?: string;
   path?: string;
   preview_url?: string;
+  status?: "uploading" | "ready" | "failed";
+  error?: string;
 }
 
 export interface PendingSendSkill {

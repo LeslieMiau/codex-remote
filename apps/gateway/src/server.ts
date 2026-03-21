@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import type { IncomingMessage } from "node:http";
 import os from "node:os";
+import { Readable } from "node:stream";
 import path from "node:path";
 import { URL } from "node:url";
 
@@ -13,6 +14,7 @@ import {
   ApproveCommandSchema,
   ArchiveThreadCommandSchema,
   CodexReviewStartResponseSchema,
+  CodexThreadSkillsResponseSchema,
   CompactThreadCommandSchema,
   CodexThreadForkResponseSchema,
   DEFAULT_DELIVERY_POLICY,
@@ -28,9 +30,12 @@ import {
   SharedRunRequestBodySchema,
   StartReviewCommandSchema,
   UpdateCodexSharedSettingsBodySchema,
+  UploadedImageAttachmentSchema,
   UnarchiveThreadCommandSchema,
   type ApprovalActionResponse,
   type CodexMessage,
+  type CodexThreadSkill,
+  type CodexThreadSkillsResponse,
   type NativeRequestActionResponse,
   type PatchActionResponse,
   type CodexReviewStartResponse,
@@ -49,10 +54,12 @@ import {
 import { slugify } from "./lib/path";
 import { GatewayStore } from "./lib/store";
 import { evaluateTailscaleAccess, type TailscaleAuthConfig } from "./lib/tailscale-auth";
+import { nowIso } from "./lib/time";
 import {
   CodexCommandBridge,
   type CodexCommandBridgeOptions
 } from "./runtime/codex-command-bridge";
+import { CodexAttachmentStore } from "./runtime/codex-attachment-store";
 import { CodexNativeThreadMarker } from "./runtime/codex-native-thread-marker";
 import { CodexSettingsBridge } from "./runtime/codex-settings-bridge";
 import { CodexStateBridge } from "./runtime/codex-state-bridge";
@@ -90,6 +97,50 @@ async function ensureParentDirectory(databasePath: string) {
 
 function getPathname(url: string) {
   return new URL(url, "http://127.0.0.1").pathname;
+}
+
+function queryBoolean(value: unknown) {
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  return value === "1" || value.toLowerCase() === "true";
+}
+
+function toRequestHeaders(
+  headers: IncomingMessage["headers"]
+): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (typeof value === "string") {
+      next[key] = value;
+      continue;
+    }
+    if (Array.isArray(value)) {
+      next[key] = value.join(", ");
+    }
+  }
+  return next;
+}
+
+async function parseMultipartFileUpload(request: IncomingMessage) {
+  const requestInit = {
+    method: "POST",
+    headers: toRequestHeaders(request.headers),
+    body: Readable.toWeb(request) as unknown as BodyInit,
+    duplex: "half"
+  } as RequestInit & {
+    duplex: "half";
+  };
+
+  const formData = await new Request("http://127.0.0.1/upload", requestInit).formData();
+
+  const file = formData.get("file");
+  if (!(file instanceof File)) {
+    throw new Error("missing_file");
+  }
+
+  return file;
 }
 
 function sendSseEvent(reply: FastifyReply, event: object, streamSeq: number) {
@@ -459,6 +510,9 @@ export async function createGatewayServer(
     codexHome: resolvedCodexHome,
     ...options.codexCommandBridgeOptions
   });
+  const attachmentStore = new CodexAttachmentStore({
+    codexHome: resolvedCodexHome
+  });
   const nativeThreadMarker = new CodexNativeThreadMarker({
     codexHome: resolvedCodexHome
   });
@@ -468,6 +522,7 @@ export async function createGatewayServer(
   });
   const codexAdapter = new CodexAppServerAdapter({
     codexHome: resolvedCodexHome,
+    attachmentStore,
     settingsBridge,
     ...options.codexAdapterOptions
   });
@@ -503,6 +558,9 @@ export async function createGatewayServer(
 
   const app = Fastify({
     logger: false
+  });
+  app.addContentTypeParser(/^multipart\/form-data/i, (_request, payload, done) => {
+    done(null, payload);
   });
 
   const registerGet = (routePath: string, handler: RouteHandlerMethod) => {
@@ -561,7 +619,12 @@ export async function createGatewayServer(
     security_policy: DEFAULT_SECURITY_POLICY
   }));
 
-  registerGet("/overview", async () => bridge.getOverview());
+  registerGet("/overview", async (request) => {
+    const query = request.query as { include_archived?: string } | undefined;
+    return bridge.getOverview({
+      includeArchived: queryBoolean(query?.include_archived)
+    });
+  });
 
   registerGet("/queue", async () => ({
     entries: await bridge.getQueue()
@@ -603,6 +666,95 @@ export async function createGatewayServer(
       };
     }
     return timeline;
+  });
+
+  registerGet("/threads/:threadId/skills", async (request, reply) => {
+    try {
+      const { threadId } = request.params as { threadId: string };
+      const thread =
+        (await bridge.getThread(threadId)) ?? fallbackThreadFromStore(store, threadId);
+      if (!thread) {
+        reply.code(404);
+        return {
+          error: "unknown_thread"
+        };
+      }
+
+      const skills = await commandBridge.listSkills({
+        cwd: thread.repo_root,
+        forceReload: false
+      });
+      const threadSkills: CodexThreadSkill[] = [];
+      for (const skill of skills) {
+        if (typeof skill.name !== "string" || typeof skill.path !== "string") {
+          continue;
+        }
+
+        threadSkills.push({
+          name: skill.name,
+          description:
+            typeof skill.description === "string"
+              ? skill.description
+              : typeof skill.shortDescription === "string"
+                ? skill.shortDescription
+                : skill.name,
+          short_description:
+            typeof skill.shortDescription === "string"
+              ? skill.shortDescription
+              : undefined,
+          display_name:
+            typeof skill.displayName === "string" ? skill.displayName : undefined,
+          path: skill.path
+        });
+      }
+
+      const response: CodexThreadSkillsResponse = CodexThreadSkillsResponseSchema.parse({
+        cwd: thread.repo_root,
+        skills: threadSkills,
+        errors: []
+      });
+      return response;
+    } catch (error) {
+      reply.code(400);
+      return {
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+
+  registerPost("/threads/:threadId/attachments/images", async (request, reply) => {
+    try {
+      const { threadId } = request.params as { threadId: string };
+      const thread =
+        (await bridge.getThread(threadId)) ?? fallbackThreadFromStore(store, threadId);
+      if (!thread) {
+        reply.code(404);
+        return {
+          error: "unknown_thread"
+        };
+      }
+
+      const file = await parseMultipartFileUpload(request.raw);
+      if (!file.type.startsWith("image/")) {
+        reply.code(400);
+        return {
+          error: "invalid_image_type"
+        };
+      }
+
+      const uploaded = await attachmentStore.saveImage({
+        threadId: thread.thread_id,
+        fileName: file.name || `image-${nowIso()}.bin`,
+        contentType: file.type || "application/octet-stream",
+        bytes: new Uint8Array(await file.arrayBuffer())
+      });
+      return UploadedImageAttachmentSchema.parse(uploaded);
+    } catch (error) {
+      reply.code(400);
+      return {
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
   });
 
   registerGet("/threads/:threadId/messages/latest", async (request, reply) => {

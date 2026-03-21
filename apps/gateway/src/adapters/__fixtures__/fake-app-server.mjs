@@ -255,6 +255,7 @@ async function handleRequest(message) {
     currentCwd = typeof message.params?.cwd === "string" ? message.params.cwd : currentCwd;
     remoteTurnId = `remote-turn-${turnCounter}`;
     const promptText = readPrompt(message.params);
+    log(`turn-input:${JSON.stringify(message.params?.input ?? [])}`);
 
     respond(message.id, {
       turn: {
@@ -272,6 +273,22 @@ async function handleRequest(message) {
     }
 
     void playFixtureTurn(promptText, remoteTurnId);
+    return;
+  }
+
+  if (message.method === "skills/list") {
+    respond(message.id, {
+      data: [
+        {
+          name: "checks",
+          description: "Run project checks",
+          shortDescription: "Run checks",
+          displayName: "Checks",
+          path: "/skills/checks/SKILL.md"
+        }
+      ],
+      nextCursor: null
+    });
     return;
   }
 

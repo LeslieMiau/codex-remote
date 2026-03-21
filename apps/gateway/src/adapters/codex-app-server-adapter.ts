@@ -7,6 +7,7 @@ import {
   encodeJsonLineMessage
 } from "../lib/rpc-framer";
 import { resolveCodexAppServerEnvironment } from "../lib/system-proxy";
+import type { CodexAttachmentStore } from "../runtime/codex-attachment-store";
 import type { CodexSettingsBridge } from "../runtime/codex-settings-bridge";
 import type {
   Adapter,
@@ -91,6 +92,7 @@ export interface CodexAppServerAdapterOptions {
   codexHome?: string;
   requestTimeoutMs?: number;
   startupRetries?: number;
+  attachmentStore?: CodexAttachmentStore;
   settingsBridge?: CodexSettingsBridge;
 }
 
@@ -100,6 +102,7 @@ interface ResolvedCodexAppServerAdapterOptions {
   codexHome?: string;
   requestTimeoutMs: number;
   startupRetries: number;
+  attachmentStore?: CodexAttachmentStore;
   settingsBridge?: CodexSettingsBridge;
 }
 
@@ -341,7 +344,10 @@ function reviewDecisionFromAction(action: PatchDecision["action"]) {
   return action === "apply" ? "approved" : "denied";
 }
 
-function buildPromptInputs(context: AdapterTurnContext) {
+async function buildPromptInputs(
+  context: AdapterTurnContext,
+  attachmentStore?: CodexAttachmentStore
+) {
   const prompt = context.turnInput?.prompt ?? context.turn.prompt;
   const inputItems = context.turnInput?.input_items ?? [];
   const inputs: Array<Record<string, unknown>> = [
@@ -358,6 +364,28 @@ function buildPromptInputs(context: AdapterTurnContext) {
         type: "skill",
         name: item.name,
         path: item.path
+      });
+      continue;
+    }
+
+    if (item.type === "image_attachment") {
+      const attachmentId =
+        typeof item.attachment_id === "string" ? item.attachment_id : "";
+      if (!attachmentId) {
+        throw new Error("Invalid image attachment.");
+      }
+      if (!attachmentStore) {
+        throw new Error("Image attachments are unavailable on this host.");
+      }
+
+      const attachment = await attachmentStore.resolveImageAttachment(attachmentId);
+      if (!attachment) {
+        throw new Error(`Image attachment is unavailable: ${attachmentId}`);
+      }
+
+      inputs.push({
+        type: "localImage",
+        path: attachment.local_path
       });
     }
   }
@@ -644,6 +672,7 @@ export class CodexAppServerAdapter implements Adapter {
       codexHome: options.codexHome,
       requestTimeoutMs: options.requestTimeoutMs ?? 30_000,
       startupRetries: options.startupRetries ?? 1,
+      attachmentStore: options.attachmentStore,
       settingsBridge: options.settingsBridge
     };
   }
@@ -1469,7 +1498,7 @@ export class CodexAppServerAdapter implements Adapter {
         const turnParams: Record<string, unknown> = {
           cwd: context.worktreePath,
           threadId: remoteThreadId,
-          input: buildPromptInputs(context)
+          input: await buildPromptInputs(context, this.options.attachmentStore)
         };
         if (
           typeof sharedSettings?.model_reasoning_effort === "string" &&

@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { CodexAttachmentStore } from "../runtime/codex-attachment-store";
 import type { PatchDecision } from "./types";
 import { CodexAppServerAdapter } from "./codex-app-server-adapter";
 
@@ -18,12 +19,20 @@ async function waitFor(ms: number) {
 }
 
 async function runAdapterTurn(input: {
+  attachmentStore?: CodexAttachmentStore;
   adapterThreadRef?: string;
   interruptAfterMs?: number;
   logPath: string;
   nativeResponsePayload?: Record<string, unknown>;
   patchAction?: PatchDecision["action"];
   prompt?: string;
+  turnInput?: {
+    prompt: string;
+    input_items?: Array<{
+      type: string;
+      [key: string]: unknown;
+    }>;
+  };
   turnId: string;
 }) {
   const root = await createTempDir();
@@ -42,6 +51,7 @@ async function runAdapterTurn(input: {
       ),
       input.logPath
     ],
+    attachmentStore: input.attachmentStore,
     requestTimeoutMs: 5_000
   });
 
@@ -107,7 +117,8 @@ async function runAdapterTurn(input: {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           },
-          worktreePath
+          worktreePath,
+          turnInput: input.turnInput
         },
         {
           onProgress: async (progress) => {
@@ -343,5 +354,53 @@ describe("CodexAppServerAdapter", () => {
 
     const log = await fs.readFile(logPath, "utf8");
     expect(log).toContain("request:turn/interrupt");
+  });
+
+  it("forwards skill and image attachment inputs to the app server", async () => {
+    const logRoot = await createTempDir();
+    cleanupRoots.push(logRoot);
+    const logPath = path.join(logRoot, "fake-server-structured.log");
+    const codexHome = path.join(logRoot, ".codex");
+    await fs.mkdir(codexHome, { recursive: true });
+
+    const attachmentStore = new CodexAttachmentStore({
+      codexHome
+    });
+    const attachment = await attachmentStore.saveImage({
+      threadId: "thread_adapter",
+      fileName: "screen.png",
+      contentType: "image/png",
+      bytes: Buffer.from("png")
+    });
+
+    const run = await runAdapterTurn({
+      attachmentStore,
+      logPath,
+      prompt: "Inspect the uploaded image",
+      turnInput: {
+        prompt: "Inspect the uploaded image",
+        input_items: [
+          {
+            type: "skill",
+            name: "checks",
+            path: "/skills/checks/SKILL.md"
+          },
+          {
+            type: "image_attachment",
+            attachment_id: attachment.attachment_id,
+            file_name: "screen.png"
+          }
+        ]
+      },
+      turnId: "turn-structured"
+    });
+    cleanupRoots.push(run.root);
+
+    expect(run.result.kind).toBe("completed");
+
+    const log = await fs.readFile(logPath, "utf8");
+    expect(log).toContain('"type":"skill"');
+    expect(log).toContain('"/skills/checks/SKILL.md"');
+    expect(log).toContain('"type":"localImage"');
   });
 });

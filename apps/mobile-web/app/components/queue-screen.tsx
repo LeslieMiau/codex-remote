@@ -147,6 +147,7 @@ export function QueueScreen() {
   );
   const queueSummary = useMemo(
     () => ({
+      inputs: actionableQueue.filter((entry) => entry.kind === "input").length,
       approvals: actionableQueue.filter((entry) => entry.kind === "approval").length,
       patches: actionableQueue.filter((entry) => entry.kind === "patch").length,
       failures: actionableQueue.filter((entry) => entry.kind === "failed").length,
@@ -243,6 +244,7 @@ export function QueueScreen() {
             </p>
           </div>
           <div className="codex-queue-summary">
+            <span className="status-dot">{isZh ? `${queueSummary.inputs} 输入` : `${queueSummary.inputs} inputs`}</span>
             <span className="status-dot">{isZh ? `${queueSummary.approvals} 批准` : `${queueSummary.approvals} approvals`}</span>
             <span className="status-dot">{isZh ? `${queueSummary.patches} 审查` : `${queueSummary.patches} reviews`}</span>
             <span className="status-dot">{isZh ? `${queueSummary.failures} 失败` : `${queueSummary.failures} failed`}</span>

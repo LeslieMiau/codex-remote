@@ -529,17 +529,18 @@ export class CodexStateBridge {
     }
   }
 
-  async getOverview(): Promise<CodexOverview> {
+  async getOverview(input?: { includeArchived?: boolean }): Promise<CodexOverview> {
     await this.syncStore();
 
-    const threads = (await Promise.all(
+    const allThreads = (await Promise.all(
       [...this.nativeThreads.values()].map((thread) => this.buildCodexThread(thread))
     ))
-      .sort((left, right) => right.updated_at.localeCompare(left.updated_at))
-      .filter((thread) => !thread.archived);
+      .sort((left, right) => right.updated_at.localeCompare(left.updated_at));
+    const activeThreads = allThreads.filter((thread) => !thread.archived);
+    const visibleThreads = input?.includeArchived ? allThreads : activeThreads;
 
     const projects = new Map<string, CodexProjectSummary>();
-    for (const thread of threads) {
+    for (const thread of visibleThreads) {
       if (!projects.has(thread.project_id)) {
         projects.set(thread.project_id, {
           project_id: thread.project_id,
@@ -553,8 +554,8 @@ export class CodexStateBridge {
       projects: [...projects.values()].sort((left, right) =>
         left.label.localeCompare(right.label)
       ),
-      threads,
-      queue: this.buildQueue(threads),
+      threads: visibleThreads,
+      queue: this.buildQueue(activeThreads),
       capabilities: await this.getCapabilities()
     };
   }
@@ -666,10 +667,10 @@ export class CodexStateBridge {
       codex_home: this.codexHome,
       shared_state_available: sharedStateAvailable,
       shared_thread_create: canControlSharedThreads,
-      supports_images: false,
+      supports_images: canControlSharedThreads,
       run_start: canControlSharedThreads,
-      live_follow_up: false,
-      image_inputs: false,
+      live_follow_up: canControlSharedThreads,
+      image_inputs: canControlSharedThreads,
       interrupt: canControlSharedThreads,
       approvals: true,
       patch_decisions: true,
@@ -679,7 +680,7 @@ export class CodexStateBridge {
       thread_fork: canControlSharedThreads,
       thread_rollback: canControlSharedThreads,
       review_start: canControlSharedThreads,
-      skills_input: false,
+      skills_input: canControlSharedThreads,
       diagnostics_read: false,
       settings_read: settingsCapabilities.settings_read,
       settings_write: settingsCapabilities.settings_write,
@@ -690,7 +691,7 @@ export class CodexStateBridge {
         ? "Shared Codex state is unavailable on this host."
         : this.options.adapterKind !== "codex-app-server"
           ? "Set CODEX_REMOTE_ADAPTER=codex-app-server to control shared Codex threads."
-          : "Live follow-up unavailable on this Codex build."
+          : undefined
     };
   }
 
@@ -815,6 +816,23 @@ export class CodexStateBridge {
     }
 
     for (const thread of threads) {
+      for (const nativeRequest of this.options.store.listNativeRequests(thread.thread_id)) {
+        if (nativeRequest.status !== "requested") {
+          continue;
+        }
+        entries.push({
+          entry_id: `input-${nativeRequest.native_request_id}`,
+          kind: "input",
+          thread_id: thread.thread_id,
+          title: thread.title,
+          summary: nativeRequest.prompt ?? nativeRequest.title ?? "Additional input requested",
+          timestamp: nativeRequest.requested_at,
+          status: "Waiting for input",
+          turn_id: nativeRequest.turn_id,
+          action_required: true
+        });
+      }
+
       for (const approval of this.listNativeApprovals(thread.thread_id)) {
         if (approval.status !== "requested") {
           continue;

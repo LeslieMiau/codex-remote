@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 
+import { openSqliteDatabase } from "./lib/sqlite";
 import { nowIso } from "./lib/time";
 import { createGatewayServer, type GatewayRuntime } from "./server";
 
@@ -25,7 +26,12 @@ afterEach(async () => {
   cleanupRoots.clear();
 });
 
-async function createRuntime() {
+async function createRuntime(input?: {
+  codexCommandBridgeOptions?: {
+    args?: string[];
+    command?: string;
+  };
+}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "gateway-routes-"));
   cleanupRoots.add(root);
 
@@ -37,16 +43,95 @@ async function createRuntime() {
   const runtime = await createGatewayServer({
     databasePath: path.join(root, "gateway.sqlite"),
     adapterKind: "codex-app-server",
-    codexHome
+    codexHome,
+    codexCommandBridgeOptions: input?.codexCommandBridgeOptions
   });
   await runtime.app.ready();
   runtimes.push(runtime);
 
   return {
+    codexHome,
     repoRoot,
     root,
     runtime
   };
+}
+
+async function seedSharedStateThreads(input: {
+  codexHome: string;
+  repoRoot: string;
+  threads: Array<{
+    archived?: boolean;
+    threadId: string;
+    title: string;
+    updatedAt?: number;
+  }>;
+}) {
+  const sessionDir = path.join(input.codexHome, "sessions", "2026", "03", "16");
+  await fs.mkdir(sessionDir, { recursive: true });
+
+  const database = await openSqliteDatabase(path.join(input.codexHome, "state_5.sqlite"));
+  database.exec(`
+    CREATE TABLE threads (
+      id TEXT PRIMARY KEY,
+      rollout_path TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      source TEXT NOT NULL,
+      cwd TEXT NOT NULL,
+      title TEXT NOT NULL,
+      has_user_event INTEGER NOT NULL DEFAULT 0,
+      archived INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+
+  const insertThread = database.prepare(
+    `
+      INSERT INTO threads(id, rollout_path, created_at, updated_at, source, cwd, title, archived)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  );
+
+  for (const [index, thread] of input.threads.entries()) {
+    const rolloutPath = path.join(sessionDir, `${thread.threadId}.jsonl`);
+    insertThread.run(
+      thread.threadId,
+      rolloutPath,
+      1_773_622_800 + index,
+      thread.updatedAt ?? 1_773_623_100 + index,
+      "vscode",
+      input.repoRoot,
+      thread.title,
+      thread.archived ? 1 : 0
+    );
+    await fs.writeFile(
+      rolloutPath,
+      `${JSON.stringify({
+        timestamp: "2026-03-16T09:00:00.000Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          message: `Seeded thread ${thread.threadId}`
+        }
+      })}\n`,
+      "utf8"
+    );
+  }
+  database.close();
+
+  await fs.writeFile(
+    path.join(input.codexHome, "session_index.jsonl"),
+    input.threads
+      .map((thread) =>
+        JSON.stringify({
+          id: thread.threadId,
+          title: thread.title
+        })
+      )
+      .join("\n")
+      .concat("\n"),
+    "utf8"
+  );
 }
 
 async function seedPendingApproval(
@@ -331,5 +416,231 @@ describe("gateway recovery routes", () => {
     });
 
     await expect(eventPromise).resolves.toContain("\"event_type\":\"approval.resolved\"");
+  });
+
+  it("returns archived threads on demand and surfaces native input in the queue", async () => {
+    const { runtime, repoRoot, codexHome } = await createRuntime();
+    const timestamp = nowIso();
+
+    await seedSharedStateThreads({
+      codexHome,
+      repoRoot,
+      threads: [
+        {
+          threadId: "thread_active",
+          title: "Active thread"
+        },
+        {
+          threadId: "thread_archived",
+          title: "Archived thread",
+          archived: true
+        }
+      ]
+    });
+
+    runtime.store.saveProject({
+      project_id: "project_demo",
+      repo_root: repoRoot,
+      created_at: timestamp,
+      updated_at: timestamp
+    });
+    runtime.store.saveThread({
+      project_id: "project_demo",
+      thread_id: "thread_active",
+      state: "waiting_input",
+      active_turn_id: "turn_active",
+      pending_turn_ids: [],
+      pending_approval_ids: [],
+      worktree_path: repoRoot,
+      adapter_kind: "codex-app-server",
+      last_stream_seq: 0,
+      created_at: timestamp,
+      updated_at: timestamp
+    });
+    runtime.store.saveTurn({
+      project_id: "project_demo",
+      thread_id: "thread_active",
+      turn_id: "turn_active",
+      prompt: "Need more info",
+      state: "waiting_input",
+      created_at: timestamp,
+      updated_at: timestamp
+    });
+    runtime.store.saveNativeRequest({
+      native_request_id: "native_demo",
+      project_id: "project_demo",
+      thread_id: "thread_active",
+      turn_id: "turn_active",
+      kind: "user_input",
+      source: "native",
+      title: "Input requested",
+      prompt: "Choose an environment",
+      status: "requested",
+      requested_at: timestamp,
+      payload: {
+        questions: [
+          {
+            id: "env",
+            question: "Choose an environment"
+          }
+        ]
+      }
+    });
+    runtime.store.saveThread({
+      project_id: "project_demo",
+      thread_id: "thread_archived",
+      state: "archived",
+      active_turn_id: null,
+      pending_turn_ids: [],
+      pending_approval_ids: [],
+      worktree_path: repoRoot,
+      adapter_kind: "codex-app-server",
+      last_stream_seq: 0,
+      created_at: timestamp,
+      updated_at: timestamp
+    });
+
+    const activeOnly = await runtime.app.inject({
+      method: "GET",
+      url: "/overview"
+    });
+    const withArchived = await runtime.app.inject({
+      method: "GET",
+      url: "/overview?include_archived=1"
+    });
+
+    expect(activeOnly.statusCode).toBe(200);
+    expect(activeOnly.json().threads.map((thread: { thread_id: string }) => thread.thread_id)).toEqual([
+      "thread_active"
+    ]);
+    expect(
+      activeOnly.json().queue.some(
+        (entry: { kind: string; thread_id: string; status: string }) =>
+          entry.kind === "input" &&
+          entry.thread_id === "thread_active" &&
+          entry.status === "Waiting for input"
+      )
+    ).toBe(true);
+
+    expect(withArchived.statusCode).toBe(200);
+    expect(
+      withArchived
+        .json()
+        .threads.map((thread: { thread_id: string }) => thread.thread_id)
+        .sort()
+    ).toEqual(["thread_active", "thread_archived"]);
+  });
+
+  it("uploads thread images and returns attachment metadata", async () => {
+    const { runtime, repoRoot } = await createRuntime();
+    const timestamp = nowIso();
+
+    runtime.store.saveProject({
+      project_id: "project_demo",
+      repo_root: repoRoot,
+      created_at: timestamp,
+      updated_at: timestamp
+    });
+    runtime.store.saveThread({
+      project_id: "project_demo",
+      thread_id: "thread_upload",
+      state: "ready",
+      active_turn_id: null,
+      pending_turn_ids: [],
+      pending_approval_ids: [],
+      worktree_path: repoRoot,
+      adapter_kind: "codex-app-server",
+      last_stream_seq: 0,
+      created_at: timestamp,
+      updated_at: timestamp
+    });
+
+    const baseUrl = await runtime.app.listen({
+      host: "127.0.0.1",
+      port: 0
+    });
+
+    const formData = new FormData();
+    formData.set(
+      "file",
+      new File([Buffer.from("png")], "screen.png", {
+        type: "image/png"
+      })
+    );
+
+    const response = await fetch(`${baseUrl}/threads/thread_upload/attachments/images`, {
+      method: "POST",
+      body: formData
+    });
+    const payload = (await response.json()) as {
+      attachment_id: string;
+      thread_id: string;
+      file_name: string;
+      content_type: string;
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.thread_id).toBe("thread_upload");
+    expect(payload.file_name).toBe("screen.png");
+    expect(payload.content_type).toBe("image/png");
+    expect(payload.attachment_id).toMatch(/^attachment_/);
+  });
+
+  it("lists skills for a thread through the gateway route", async () => {
+    const { runtime, repoRoot } = await createRuntime({
+      codexCommandBridgeOptions: {
+        command: process.execPath,
+        args: [
+          path.join(
+            process.cwd(),
+            "src",
+            "adapters",
+            "__fixtures__",
+            "fake-app-server.mjs"
+          )
+        ]
+      }
+    });
+    const timestamp = nowIso();
+
+    runtime.store.saveProject({
+      project_id: "project_demo",
+      repo_root: repoRoot,
+      created_at: timestamp,
+      updated_at: timestamp
+    });
+    runtime.store.saveThread({
+      project_id: "project_demo",
+      thread_id: "thread_skills",
+      state: "ready",
+      active_turn_id: null,
+      pending_turn_ids: [],
+      pending_approval_ids: [],
+      worktree_path: repoRoot,
+      adapter_kind: "codex-app-server",
+      last_stream_seq: 0,
+      created_at: timestamp,
+      updated_at: timestamp
+    });
+
+    const response = await runtime.app.inject({
+      method: "GET",
+      url: "/threads/thread_skills/skills"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      cwd: repoRoot,
+      skills: [
+        {
+          name: "checks",
+          description: "Run project checks",
+          short_description: "Run checks",
+          display_name: "Checks",
+          path: "/skills/checks/SKILL.md"
+        }
+      ],
+      errors: []
+    });
   });
 });

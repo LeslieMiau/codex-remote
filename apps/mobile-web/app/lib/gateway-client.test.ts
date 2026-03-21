@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  getCodexOverview,
+  getThreadSkills,
   subscribeToThreadStream,
   uploadSharedThreadImage,
   type TransportState
@@ -246,5 +248,83 @@ describe("uploadSharedThreadImage", () => {
     const formData = requestInit?.body;
     expect(formData).toBeInstanceOf(FormData);
     expect((formData as FormData).get("file")).toBe(file);
+  });
+});
+
+describe("gateway reads", () => {
+  it("includes archived threads when requested from overview", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          projects: [],
+          threads: [],
+          queue: [],
+          capabilities: {
+            adapter_kind: "codex-app-server",
+            collaboration_mode: "default",
+            shared_state_available: true
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json"
+          }
+        }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getCodexOverview({
+      includeArchived: true
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/overview?include_archived=1",
+      expect.objectContaining({
+        method: "GET"
+      })
+    );
+  });
+
+  it("loads skills for a thread from the gateway route", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          cwd: "/repo",
+          skills: [
+            {
+              name: "checks",
+              path: "/skills/checks/SKILL.md",
+              description: "Run project checks"
+            }
+          ],
+          errors: []
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json"
+          }
+        }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const skills = await getThreadSkills("thread-skills");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/threads/thread-skills/skills",
+      expect.objectContaining({
+        method: "GET"
+      })
+    );
+    expect(skills).toEqual([
+      {
+        name: "checks",
+        path: "/skills/checks/SKILL.md",
+        description: "Run project checks"
+      }
+    ]);
   });
 });

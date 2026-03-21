@@ -6,8 +6,11 @@ import type {
   CodexMessage,
   CodexPatchRecord,
   CodexReviewStartBody,
+  CodexReviewStartResponse,
   CodexSharedSettingsResponse,
   CodexThread,
+  CodexThreadForkResponse,
+  CodexThreadSkillsResponse,
   CodexTimelineResponse,
   CodexTranscriptPageResponse,
   GatewayEvent,
@@ -106,20 +109,20 @@ function buildCapabilities(): CodexCapabilitiesResponse {
     collaboration_mode: "default",
     shared_state_available: false,
     shared_thread_create: true,
-    supports_images: false,
+    supports_images: true,
     run_start: true,
     live_follow_up: true,
-    image_inputs: false,
+    image_inputs: true,
     interrupt: true,
     approvals: true,
     patch_decisions: true,
-    thread_rename: false,
-    thread_archive: false,
-    thread_compact: false,
-    thread_fork: false,
-    thread_rollback: false,
-    review_start: false,
-    skills_input: false,
+    thread_rename: true,
+    thread_archive: true,
+    thread_compact: true,
+    thread_fork: true,
+    thread_rollback: true,
+    review_start: true,
+    skills_input: true,
     diagnostics_read: false,
     settings_read: true,
     settings_write: false,
@@ -317,8 +320,8 @@ export async function followUpRun(
   });
 }
 
-export async function forkSharedThread(threadId: string) {
-  return requestJson(`/threads/${threadId}/fork`, {
+export async function forkSharedThread(threadId: string): Promise<CodexThreadForkResponse> {
+  return requestJson<CodexThreadForkResponse>(`/threads/${threadId}/fork`, {
     method: "POST",
     body: JSON.stringify({
       actor_id: "mobile_web",
@@ -358,8 +361,15 @@ export async function getCodexMessagesPage(input: {
   return readOrFallback(`/threads/${threadId}/messages${suffix}`, () => buildTranscript(threadId));
 }
 
-export async function getCodexOverview(): Promise<CodexOverviewResponse> {
-  return readOrFallback("/overview", buildOverview);
+export async function getCodexOverview(input?: {
+  includeArchived?: boolean;
+}): Promise<CodexOverviewResponse> {
+  const search = new URLSearchParams();
+  if (input?.includeArchived) {
+    search.set("include_archived", "1");
+  }
+  const suffix = search.size > 0 ? `?${search.toString()}` : "";
+  return readOrFallback(`/overview${suffix}`, buildOverview);
 }
 
 export async function getCodexSharedSettings(): Promise<CodexSharedSettingsResponse> {
@@ -370,8 +380,18 @@ export async function getCodexTimeline(threadId: string): Promise<CodexTimelineR
   return readOrFallback(`/threads/${threadId}/timeline`, () => buildTimeline(threadId));
 }
 
-export async function getThreadSkills(): Promise<Array<{ name: string; path?: string }>> {
-  return [];
+export async function getThreadSkills(threadId: string): Promise<
+  CodexThreadSkillsResponse["skills"]
+> {
+  const response = await readOrFallback<CodexThreadSkillsResponse>(
+    `/threads/${threadId}/skills`,
+    () => ({
+      cwd: "",
+      skills: [],
+      errors: []
+    })
+  );
+  return response.skills;
 }
 
 export async function interruptSharedRun(runId: string) {
@@ -447,16 +467,21 @@ export async function rollbackSharedThread(threadId: string, numTurns?: number) 
   });
 }
 
-export async function startSharedReview(input: CodexReviewStartBody) {
-  return requestJson(`/threads/${input.thread_id ?? input.threadId}/reviews`, {
-    method: "POST",
-    body: JSON.stringify({
-      actor_id: input.actor_id ?? "mobile_web",
-      request_id: input.request_id ?? requestId("start-review"),
-      target: input.target,
-      delivery: input.delivery
-    })
-  });
+export async function startSharedReview(
+  input: CodexReviewStartBody
+): Promise<CodexReviewStartResponse> {
+  return requestJson<CodexReviewStartResponse>(
+    `/threads/${input.thread_id ?? input.threadId}/reviews`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        actor_id: input.actor_id ?? "mobile_web",
+        request_id: input.request_id ?? requestId("start-review"),
+        target: input.target,
+        delivery: input.delivery
+      })
+    }
+  );
 }
 
 export async function startSharedRun(

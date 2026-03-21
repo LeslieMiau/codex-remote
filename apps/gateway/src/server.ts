@@ -13,6 +13,7 @@ import {
   ApplyPatchCommandSchema,
   ApproveCommandSchema,
   ArchiveThreadCommandSchema,
+  CodexDiagnosticsSummaryResponseSchema,
   CodexReviewStartResponseSchema,
   CodexThreadSkillsResponseSchema,
   CompactThreadCommandSchema,
@@ -33,6 +34,7 @@ import {
   UploadedImageAttachmentSchema,
   UnarchiveThreadCommandSchema,
   type ApprovalActionResponse,
+  type CodexDiagnosticsSummaryResponse,
   type CodexMessage,
   type CodexThreadSkill,
   type CodexThreadSkillsResponse,
@@ -652,6 +654,21 @@ export async function createGatewayServer(
       reply.code(message === "settings_conflict" ? 409 : 400);
       return {
         error: message
+      };
+    }
+  });
+
+  registerGet("/diagnostics/summary", async (_request, reply) => {
+    try {
+      const response: CodexDiagnosticsSummaryResponse =
+        CodexDiagnosticsSummaryResponseSchema.parse(
+          await settingsBridge.getDiagnosticsSummary()
+        );
+      return response;
+    } catch (error) {
+      reply.code(400);
+      return {
+        error: error instanceof Error ? error.message : String(error)
       };
     }
   });
@@ -1776,6 +1793,7 @@ export async function createGatewayServer(
 
   app.addHook("onClose", async () => {
     wsServer.close();
+    await manager.close();
     await nativeThreadMarker.close();
     await bridge.stop();
     store.close();

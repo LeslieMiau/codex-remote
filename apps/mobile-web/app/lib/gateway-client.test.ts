@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  getCodexDiagnosticsSummary,
   getCodexOverview,
   getThreadSkills,
   subscribeToThreadStream,
@@ -368,6 +369,42 @@ describe("gateway reads", () => {
       JSON.stringify({
         model: "gpt-5.4",
         model_reasoning_effort: "high"
+      })
+    );
+  });
+
+  it("loads diagnostics summary from the gateway route", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          account: {
+            type: "apiKey"
+          },
+          requires_openai_auth: false,
+          rate_limits: null,
+          rate_limits_by_limit_id: {},
+          mcp_servers: [],
+          errors: {}
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json"
+          }
+        }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const diagnostics = await getCodexDiagnosticsSummary();
+
+    expect(diagnostics.account).toEqual({
+      type: "apiKey"
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/diagnostics/summary",
+      expect.objectContaining({
+        method: "GET"
       })
     );
   });

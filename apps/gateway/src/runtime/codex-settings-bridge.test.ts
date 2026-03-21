@@ -57,8 +57,98 @@ async function createBridgeFixture() {
     "utf8"
   );
 
+  const commandBridge = {
+    async listExperimentalFeatures() {
+      return [
+        {
+          name: "fastApply",
+          stage: "beta",
+          displayName: "Fast Apply",
+          description: "Apply patches faster",
+          enabled: true,
+          defaultEnabled: false
+        }
+      ];
+    },
+    async listMcpServerStatuses() {
+      return [
+        {
+          name: "github",
+          authStatus: "bearerToken",
+          toolCount: 4,
+          resourceCount: 2,
+          resourceTemplateCount: 1
+        }
+      ];
+    },
+    async listModels() {
+      return [
+        {
+          model: "gpt-5.4",
+          displayName: "GPT-5.4",
+          defaultReasoningEffort: "medium",
+          reasoningLevels: [
+            {
+              reasoningEffort: "medium"
+            },
+            {
+              reasoningEffort: "high"
+            }
+          ]
+        },
+        {
+          model: "gpt-5.4-lite",
+          displayName: "GPT-5.4 Lite",
+          reasoningLevels: []
+        }
+      ];
+    },
+    async readAccount() {
+      return {
+        account: {
+          type: "chatgpt",
+          email: "leslie@example.com",
+          planType: "pro"
+        },
+        requiresOpenaiAuth: false
+      };
+    },
+    async readConfigRequirements() {
+      return {
+        allowedApprovalPolicies: ["onRequest", "unlessTrusted"],
+        allowedSandboxModes: ["workspaceWrite", "readOnly"],
+        allowedWebSearchModes: ["on", "off"],
+        featureRequirements: {
+          images: true
+        },
+        enforceResidency: "us"
+      };
+    },
+    async readRateLimits() {
+      return {
+        rateLimits: {
+          primary: {
+            usedPercent: 42,
+            windowDurationMins: 300,
+            resetsAt: 1_773_800_000
+          },
+          planType: "pro"
+        },
+        rateLimitsByLimitId: {
+          primary: {
+            primary: {
+              usedPercent: 42
+            }
+          }
+        }
+      };
+    }
+  };
+
   return new CodexSettingsBridge({
     codexHome
+    ,
+    commandBridge
   });
 }
 
@@ -67,6 +157,7 @@ describe("CodexSettingsBridge", () => {
     const bridge = await createBridgeFixture();
 
     await expect(bridge.getCapabilities()).resolves.toEqual({
+      diagnostics_read: true,
       settings_read: true,
       settings_write: true,
       shared_model_config: true
@@ -78,6 +169,26 @@ describe("CodexSettingsBridge", () => {
     expect(settings.available_models.map((model) => model.slug)).toEqual([
       "gpt-5.4",
       "gpt-5.4-lite"
+    ]);
+    expect(settings.requirements).toEqual({
+      allowed_approval_policies: ["on-request", "untrusted"],
+      allowed_sandbox_modes: ["workspace-write", "read-only"],
+      allowed_web_search_modes: ["on", "off"],
+      feature_requirements: {
+        images: true
+      },
+      enforce_residency: "us"
+    });
+    expect(settings.experimental_features).toEqual([
+      {
+        name: "fastApply",
+        stage: "beta",
+        display_name: "Fast Apply",
+        description: "Apply patches faster",
+        announcement: undefined,
+        enabled: true,
+        default_enabled: false
+      }
     ]);
   });
 
@@ -100,5 +211,42 @@ describe("CodexSettingsBridge", () => {
     await expect(
       fs.readFile(path.join(bridge.codexHome, "config.toml"), "utf8")
     ).resolves.toBe('model = "gpt-5.4-lite"\n');
+  });
+
+  it("builds diagnostics from command bridge responses", async () => {
+    const bridge = await createBridgeFixture();
+
+    await expect(bridge.getDiagnosticsSummary()).resolves.toMatchObject({
+      account: {
+        type: "chatgpt",
+        email: "leslie@example.com",
+        plan_type: "pro"
+      },
+      requires_openai_auth: false,
+      rate_limits: {
+        plan_type: "pro",
+        primary: {
+          used_percent: 42,
+          window_duration_mins: 300
+        }
+      },
+      rate_limits_by_limit_id: {
+        primary: {
+          primary: {
+            used_percent: 42
+          }
+        }
+      },
+      mcp_servers: [
+        {
+          name: "github",
+          auth_status: "bearerToken",
+          tool_count: 4,
+          resource_count: 2,
+          resource_template_count: 1
+        }
+      ],
+      errors: {}
+    });
   });
 });

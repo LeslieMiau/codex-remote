@@ -1,6 +1,7 @@
 import type {
   ApprovalRequest,
   CodexCapabilitiesResponse,
+  CodexDiagnosticsSummaryResponse,
   CodexLiveState,
   CodexOverviewResponse,
   CodexMessage,
@@ -125,7 +126,7 @@ function buildCapabilities(): CodexCapabilitiesResponse {
     thread_rollback: true,
     review_start: true,
     skills_input: true,
-    diagnostics_read: false,
+    diagnostics_read: true,
     settings_read: true,
     settings_write: false,
     shared_model_config: true,
@@ -376,6 +377,17 @@ export async function getCodexOverview(input?: {
 
 export async function getCodexSharedSettings(): Promise<CodexSharedSettingsResponse> {
   return readOrFallback("/settings/shared", buildSettings);
+}
+
+export async function getCodexDiagnosticsSummary(): Promise<CodexDiagnosticsSummaryResponse> {
+  return readOrFallback("/diagnostics/summary", () => ({
+    account: null,
+    requires_openai_auth: false,
+    rate_limits: null,
+    rate_limits_by_limit_id: {},
+    mcp_servers: [],
+    errors: {}
+  }));
 }
 
 export async function updateCodexSharedSettings(

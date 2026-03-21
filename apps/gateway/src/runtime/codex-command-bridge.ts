@@ -63,6 +63,14 @@ interface AppServerSkill {
   path?: string;
 }
 
+interface AppServerMcpServerStatus {
+  authStatus?: string;
+  name?: string;
+  resourceCount?: number;
+  resourceTemplateCount?: number;
+  toolCount?: number;
+}
+
 interface AppServerReviewStartResponse {
   reviewThreadId?: string;
   turn?: {
@@ -596,6 +604,52 @@ export class CodexCommandBridge {
           }),
           waitForExit
         ])) as AppServerCursorPage<Record<string, unknown>> | undefined;
+
+        data.push(...(response?.data ?? []));
+        cursor = response?.nextCursor ?? null;
+      } while (cursor);
+
+      return data;
+    });
+  }
+
+  async readAccount(input?: { refreshToken?: boolean }) {
+    return this.withClient(async ({ request, waitForExit }) => {
+      const response = await Promise.race([
+        request("account/read", {
+          refreshToken: input?.refreshToken ?? false
+        }),
+        waitForExit
+      ]);
+
+      return response ?? null;
+    });
+  }
+
+  async readRateLimits() {
+    return this.withClient(async ({ request, waitForExit }) => {
+      const response = await Promise.race([
+        request("account/rateLimits/read"),
+        waitForExit
+      ]);
+
+      return response ?? null;
+    });
+  }
+
+  async listMcpServerStatuses() {
+    return this.withClient(async ({ request, waitForExit }) => {
+      const data: AppServerMcpServerStatus[] = [];
+      let cursor: string | null = null;
+
+      do {
+        const response = (await Promise.race([
+          request("mcpServerStatus/list", {
+            cursor,
+            limit: 200
+          }),
+          waitForExit
+        ])) as AppServerCursorPage<AppServerMcpServerStatus> | undefined;
 
         data.push(...(response?.data ?? []));
         cursor = response?.nextCursor ?? null;

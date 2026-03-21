@@ -130,6 +130,15 @@ function nativeRequestStatusFromAction(
   return command.action === "cancel" ? "canceled" : "responded";
 }
 
+function isStoreClosedError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const code = (error as Error & { code?: unknown }).code;
+  return error.message === "database is not open" || code === "ERR_INVALID_STATE";
+}
+
 export class ThreadRuntimeManager {
   private readonly store: GatewayStore;
   private readonly sessionHub: SessionHub;
@@ -139,6 +148,7 @@ export class ThreadRuntimeManager {
   private readonly worktreeManager: WorktreeManager;
   private readonly nativeThreadMarker?: CodexNativeThreadMarker;
   private readonly executions = new Map<string, { interrupt(reason?: string): Promise<void> }>();
+  private readonly backgroundTasks = new Set<Promise<void>>();
   private readonly approvalBindings = new Map<string, Deferred<ApprovalResolution>>();
   private readonly nativeRequestBindings = new Map<
     string,
@@ -146,6 +156,7 @@ export class ThreadRuntimeManager {
   >();
   private readonly patchBindings = new Map<string, Deferred<PatchDecision>>();
   private readonly turnInputs = new Map<string, AdapterTurnInput>();
+  private closing = false;
 
   constructor(options: ThreadRuntimeManagerOptions) {
     this.store = options.store;
@@ -161,6 +172,16 @@ export class ThreadRuntimeManager {
   startBackgroundWorkers() {
     void this.policyEngine;
     void this.adapter;
+  }
+
+  async close() {
+    this.closing = true;
+
+    const interrupts = Array.from(this.executions.values(), (execution) =>
+      execution.interrupt("gateway_shutdown")
+    );
+    await Promise.allSettled(interrupts);
+    await Promise.allSettled(Array.from(this.backgroundTasks));
   }
 
   hasLiveApprovalBinding(approvalId: string) {
@@ -231,9 +252,9 @@ export class ThreadRuntimeManager {
       }
     });
 
-    void this.executeTurn(savedTurn.turn_id).catch((error) => {
+    const executionTask = this.executeTurn(savedTurn.turn_id).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
-      this.store.appendAudit({
+      this.appendAudit({
         category: "adapter_lifecycle",
         project_id: savedTurn.project_id,
         thread_id: savedTurn.thread_id,
@@ -243,6 +264,10 @@ export class ThreadRuntimeManager {
           error: message
         }
       });
+    });
+    this.backgroundTasks.add(executionTask);
+    void executionTask.finally(() => {
+      this.backgroundTasks.delete(executionTask);
     });
 
     if (this.syncThreadNow) {
@@ -467,7 +492,7 @@ export class ThreadRuntimeManager {
       rollback_available: false,
       updated_at: nowIso()
     });
-    this.store.appendAudit({
+    this.appendAudit({
       category: "patch_rollback",
       project_id: updatedPatch.project_id,
       thread_id: updatedPatch.thread_id,
@@ -529,7 +554,7 @@ export class ThreadRuntimeManager {
       updated_at: timestamp,
       awaiting_native_commit: false
     });
-    this.store.appendAudit({
+    this.appendAudit({
       category: "adapter_lifecycle",
       project_id: startedTurn.project_id,
       thread_id: startedTurn.thread_id,
@@ -976,7 +1001,7 @@ export class ThreadRuntimeManager {
         await this.failTurn(turn, input);
       },
       onDiagnostic: async (input) => {
-        this.store.appendAudit({
+        this.appendAudit({
           category: "adapter_diagnostic",
           thread_id: threadId,
           turn_id: turnId,
@@ -1018,7 +1043,7 @@ export class ThreadRuntimeManager {
       updated_at: timestamp,
       awaiting_native_commit: false
     });
-    this.store.appendAudit({
+    this.appendAudit({
       category: "adapter_lifecycle",
       project_id: turn.project_id,
       thread_id: turn.thread_id,
@@ -1114,6 +1139,21 @@ export class ThreadRuntimeManager {
       state,
       updated_at: input.updatedAt ?? nowIso()
     });
+  }
+
+  private appendAudit(input: Parameters<GatewayStore["appendAudit"]>[0]) {
+    if (this.closing) {
+      return;
+    }
+
+    try {
+      this.store.appendAudit(input);
+    } catch (error) {
+      if (this.closing && isStoreClosedError(error)) {
+        return;
+      }
+      throw error;
+    }
   }
 
   private updateLiveState(

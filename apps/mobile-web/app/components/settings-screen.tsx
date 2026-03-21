@@ -7,6 +7,7 @@ import {
   setCachedSharedSettings
 } from "../lib/client-cache";
 import {
+  getCodexDiagnosticsSummary,
   getCodexSharedSettings,
   updateCodexSharedSettings
 } from "../lib/gateway-client";
@@ -21,11 +22,15 @@ export function SettingsScreen() {
   const { locale } = useLocale();
   const isZh = locale === "zh";
   const [settings, setSettings] = useState(() => getCachedSharedSettings());
+  const [diagnostics, setDiagnostics] = useState<Awaited<
+    ReturnType<typeof getCodexDiagnosticsSummary>
+  > | null>(null);
   const [draftModel, setDraftModel] = useState(() => getCachedSharedSettings()?.model ?? "");
   const [draftReasoning, setDraftReasoning] = useState(
     () => getCachedSharedSettings()?.model_reasoning_effort ?? ""
   );
   const [error, setError] = useState<string | null>(null);
+  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(!getCachedSharedSettings());
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -50,11 +55,26 @@ export function SettingsScreen() {
     }
 
     try {
-      const nextSettings = await getCodexSharedSettings();
+      const [settingsResult, diagnosticsResult] = await Promise.allSettled([
+        getCodexSharedSettings(),
+        getCodexDiagnosticsSummary()
+      ]);
+      if (settingsResult.status !== "fulfilled") {
+        throw settingsResult.reason;
+      }
+
+      const nextSettings = settingsResult.value;
       setSettings(nextSettings);
       setCachedSharedSettings(nextSettings);
       syncDrafts(nextSettings);
       setError(null);
+      if (diagnosticsResult.status === "fulfilled") {
+        setDiagnostics(diagnosticsResult.value);
+        setDiagnosticsError(null);
+      } else {
+        setDiagnostics(null);
+        setDiagnosticsError(describeSaveError(diagnosticsResult.reason));
+      }
     } catch (loadError) {
       setError(describeSaveError(loadError));
     } finally {
@@ -85,6 +105,7 @@ export function SettingsScreen() {
   const savedModel = settings?.model ?? "";
   const savedReasoning = settings?.model_reasoning_effort ?? "";
   const isReadOnly = settings?.read_only ?? true;
+  const requirements = settings?.requirements;
   const hasChanges = draftModel !== savedModel || draftReasoning !== savedReasoning;
   const canSave =
     Boolean(settings) && !isReadOnly && !isSaving && Boolean(draftModel) && hasChanges;
@@ -125,6 +146,12 @@ export function SettingsScreen() {
       setSettings(nextSettings);
       setCachedSharedSettings(nextSettings);
       syncDrafts(nextSettings);
+      try {
+        setDiagnostics(await getCodexDiagnosticsSummary());
+        setDiagnosticsError(null);
+      } catch (diagnosticsLoadError) {
+        setDiagnosticsError(describeSaveError(diagnosticsLoadError));
+      }
       setToastMessage(
         localize(locale, {
           zh: "共享配置已更新。",
@@ -396,6 +423,64 @@ export function SettingsScreen() {
         <section className="codex-page-section">
           <div className="codex-page-section__header">
             <div>
+              <p className="section-label">{isZh ? "约束" : "Requirements"}</p>
+              <h2>{isZh ? "共享配置约束" : "Shared configuration requirements"}</h2>
+            </div>
+          </div>
+
+          {requirements ? (
+            <div className="settings-home__read-list">
+              {requirements.allowed_approval_policies?.length ? (
+                <article className="settings-home__read-item">
+                  <span>{localize(locale, { zh: "批准策略", en: "Approval policies" })}</span>
+                  <strong>{requirements.allowed_approval_policies.join(", ")}</strong>
+                </article>
+              ) : null}
+              {requirements.allowed_sandbox_modes?.length ? (
+                <article className="settings-home__read-item">
+                  <span>{localize(locale, { zh: "沙箱模式", en: "Sandbox modes" })}</span>
+                  <strong>{requirements.allowed_sandbox_modes.join(", ")}</strong>
+                </article>
+              ) : null}
+              {requirements.allowed_web_search_modes?.length ? (
+                <article className="settings-home__read-item">
+                  <span>{localize(locale, { zh: "搜索模式", en: "Web search modes" })}</span>
+                  <strong>{requirements.allowed_web_search_modes.join(", ")}</strong>
+                </article>
+              ) : null}
+              {requirements.enforce_residency ? (
+                <article className="settings-home__read-item">
+                  <span>{localize(locale, { zh: "驻留要求", en: "Residency" })}</span>
+                  <strong>{requirements.enforce_residency}</strong>
+                </article>
+              ) : null}
+              {requirements.feature_requirements &&
+              Object.keys(requirements.feature_requirements).length > 0 ? (
+                <article className="settings-home__read-item">
+                  <span>{localize(locale, { zh: "功能要求", en: "Feature requirements" })}</span>
+                  <strong>
+                    {Object.entries(requirements.feature_requirements)
+                      .map(([key, value]) => `${key}: ${value ? "required" : "optional"}`)
+                      .join(", ")}
+                  </strong>
+                </article>
+              ) : null}
+            </div>
+          ) : (
+            <div className="codex-empty-state">
+              <strong>
+                {localize(locale, {
+                  zh: "当前没有共享配置约束数据",
+                  en: "No shared configuration requirements are available"
+                })}
+              </strong>
+            </div>
+          )}
+        </section>
+
+        <section className="codex-page-section">
+          <div className="codex-page-section__header">
+            <div>
               <p className="section-label">{isZh ? "实验特性" : "Experimental features"}</p>
               <h2>{isZh ? "当前特性开关" : "Current feature flags"}</h2>
             </div>
@@ -418,6 +503,91 @@ export function SettingsScreen() {
                   en: "No experimental feature data is available"
                 })}
               </strong>
+            </div>
+          )}
+        </section>
+
+        <section className="codex-page-section">
+          <div className="codex-page-section__header">
+            <div>
+              <p className="section-label">{isZh ? "诊断" : "Diagnostics"}</p>
+              <h2>{isZh ? "账号与配额" : "Account and limits"}</h2>
+            </div>
+          </div>
+
+          {diagnosticsError ? (
+            <div className="codex-empty-state">
+              <strong>
+                {localize(locale, {
+                  zh: "诊断信息暂时不可用",
+                  en: "Diagnostics are temporarily unavailable"
+                })}
+              </strong>
+              <p>{diagnosticsError}</p>
+            </div>
+          ) : diagnostics ? (
+            <div className="settings-home__read-list">
+              <article className="settings-home__read-item">
+                <span>{localize(locale, { zh: "账号", en: "Account" })}</span>
+                <strong>
+                  {diagnostics.account?.type === "chatgpt"
+                    ? `${diagnostics.account.email} · ${diagnostics.account.plan_type}`
+                    : diagnostics.account?.type === "apiKey"
+                      ? localize(locale, { zh: "API Key", en: "API key" })
+                      : localize(locale, { zh: "未登录", en: "Not connected" })}
+                </strong>
+              </article>
+              <article className="settings-home__read-item">
+                <span>{localize(locale, { zh: "需要认证", en: "Auth required" })}</span>
+                <strong>
+                  {diagnostics.requires_openai_auth
+                    ? localize(locale, { zh: "是", en: "Yes" })
+                    : localize(locale, { zh: "否", en: "No" })}
+                </strong>
+              </article>
+              <article className="settings-home__read-item">
+                <span>{localize(locale, { zh: "主配额", en: "Primary limit" })}</span>
+                <strong>
+                  {diagnostics.rate_limits?.primary
+                    ? `${diagnostics.rate_limits.primary.used_percent}%`
+                    : localize(locale, { zh: "暂无数据", en: "No data" })}
+                </strong>
+              </article>
+              <article className="settings-home__read-item">
+                <span>{localize(locale, { zh: "MCP 服务", en: "MCP servers" })}</span>
+                <strong>
+                  {diagnostics.mcp_servers.length > 0
+                    ? diagnostics.mcp_servers
+                        .map(
+                          (server) =>
+                            `${server.name} (${server.auth_status}, ${server.tool_count} tools)`
+                        )
+                        .join(", ")
+                    : localize(locale, { zh: "暂无数据", en: "No data" })}
+                </strong>
+              </article>
+              {diagnostics.errors.account ? (
+                <article className="settings-home__read-item">
+                  <span>{localize(locale, { zh: "账号错误", en: "Account error" })}</span>
+                  <strong>{diagnostics.errors.account}</strong>
+                </article>
+              ) : null}
+              {diagnostics.errors.rate_limits ? (
+                <article className="settings-home__read-item">
+                  <span>{localize(locale, { zh: "配额错误", en: "Limit error" })}</span>
+                  <strong>{diagnostics.errors.rate_limits}</strong>
+                </article>
+              ) : null}
+              {diagnostics.errors.mcp_servers ? (
+                <article className="settings-home__read-item">
+                  <span>{localize(locale, { zh: "MCP 错误", en: "MCP error" })}</span>
+                  <strong>{diagnostics.errors.mcp_servers}</strong>
+                </article>
+              ) : null}
+            </div>
+          ) : (
+            <div className="codex-empty-state">
+              <strong>{localize(locale, { zh: "正在读取诊断", en: "Loading diagnostics" })}</strong>
             </div>
           )}
         </section>

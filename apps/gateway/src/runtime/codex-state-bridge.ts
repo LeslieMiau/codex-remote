@@ -655,6 +655,7 @@ export class CodexStateBridge {
     const settingsCapabilities = this.options.settingsBridge
       ? await this.options.settingsBridge.getCapabilities()
       : {
+          diagnostics_read: false,
           settings_read: false,
           settings_write: false,
           shared_model_config: false
@@ -681,7 +682,7 @@ export class CodexStateBridge {
       thread_rollback: canControlSharedThreads,
       review_start: canControlSharedThreads,
       skills_input: canControlSharedThreads,
-      diagnostics_read: false,
+      diagnostics_read: settingsCapabilities.diagnostics_read,
       settings_read: settingsCapabilities.settings_read,
       settings_write: settingsCapabilities.settings_write,
       shared_model_config: settingsCapabilities.shared_model_config,

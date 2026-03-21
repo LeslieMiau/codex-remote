@@ -16,6 +16,8 @@ import type {
   GatewayEvent,
   NativeRequestRecord,
   TurnInputItem,
+  UpdateCodexSharedSettingsBody,
+  UpdateCodexSharedSettingsResponse,
   UploadedImageAttachment
 } from "@codex-remote/protocol";
 
@@ -374,6 +376,15 @@ export async function getCodexOverview(input?: {
 
 export async function getCodexSharedSettings(): Promise<CodexSharedSettingsResponse> {
   return readOrFallback("/settings/shared", buildSettings);
+}
+
+export async function updateCodexSharedSettings(
+  input: UpdateCodexSharedSettingsBody
+): Promise<UpdateCodexSharedSettingsResponse> {
+  return requestJson<UpdateCodexSharedSettingsResponse>("/settings/shared", {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
 }
 
 export async function getCodexTimeline(threadId: string): Promise<CodexTimelineResponse> {

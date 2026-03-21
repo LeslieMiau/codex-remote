@@ -42,6 +42,11 @@ function upsertTomlString(raw: string, key: string, value: string) {
   return `${raw}${suffix}${rendered}${newline}`;
 }
 
+function removeTomlString(raw: string, key: string) {
+  const pattern = new RegExp(`^\\s*${key}\\s*=\\s*["'][^"'\\n]*["']\\s*(?:\\r?\\n)?`, "m");
+  return raw.replace(pattern, "");
+}
+
 async function pathExists(targetPath: string) {
   try {
     await fs.access(targetPath);
@@ -174,9 +179,6 @@ export class CodexSettingsBridge {
 
     const current = await this.getSettings();
     const nextModel = input.model ?? current.model;
-    const nextReasoningEffort =
-      input.model_reasoning_effort ?? current.model_reasoning_effort;
-
     if (!nextModel) {
       throw new Error("A shared Codex model is required.");
     }
@@ -186,9 +188,20 @@ export class CodexSettingsBridge {
       throw new Error(`Unknown shared Codex model: ${nextModel}`);
     }
 
+    const supportedEfforts = modelOption?.reasoning_levels.map((level) => level.effort) ?? [];
+    let nextReasoningEffort =
+      input.model_reasoning_effort ?? current.model_reasoning_effort;
+    if (
+      typeof input.model === "string" &&
+      input.model !== current.model &&
+      supportedEfforts.length === 0 &&
+      typeof input.model_reasoning_effort === "undefined"
+    ) {
+      nextReasoningEffort = undefined;
+    }
+
     if (nextReasoningEffort) {
-      const supportedEfforts = modelOption?.reasoning_levels.map((level) => level.effort) ?? [];
-      if (supportedEfforts.length > 0 && !supportedEfforts.includes(nextReasoningEffort)) {
+      if (supportedEfforts.length === 0 || !supportedEfforts.includes(nextReasoningEffort)) {
         throw new Error(
           `Reasoning effort ${nextReasoningEffort} is unavailable for model ${nextModel}.`
         );
@@ -199,6 +212,8 @@ export class CodexSettingsBridge {
     rawConfig = upsertTomlString(rawConfig, MODEL_KEY, nextModel);
     if (nextReasoningEffort) {
       rawConfig = upsertTomlString(rawConfig, REASONING_KEY, nextReasoningEffort);
+    } else {
+      rawConfig = removeTomlString(rawConfig, REASONING_KEY);
     }
 
     await fs.writeFile(this.configPath, rawConfig, "utf8");

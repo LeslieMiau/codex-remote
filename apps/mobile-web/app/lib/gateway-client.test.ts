@@ -4,6 +4,7 @@ import {
   getCodexOverview,
   getThreadSkills,
   subscribeToThreadStream,
+  updateCodexSharedSettings,
   uploadSharedThreadImage,
   type TransportState
 } from "./gateway-client";
@@ -326,5 +327,48 @@ describe("gateway reads", () => {
         description: "Run project checks"
       }
     ]);
+  });
+
+  it("updates shared settings with a PATCH request", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          model: "gpt-5.4",
+          model_reasoning_effort: "high",
+          available_models: [],
+          experimental_features: [],
+          read_only: false
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json"
+          }
+        }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const nextSettings = await updateCodexSharedSettings({
+      model: "gpt-5.4",
+      model_reasoning_effort: "high"
+    });
+
+    expect(nextSettings.model_reasoning_effort).toBe("high");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/settings/shared",
+      expect.objectContaining({
+        method: "PATCH"
+      })
+    );
+    const firstCall = (fetchMock.mock.calls as unknown as Array<
+      [string, RequestInit | undefined]
+    >)[0];
+    expect(firstCall?.[1]?.body).toBe(
+      JSON.stringify({
+        model: "gpt-5.4",
+        model_reasoning_effort: "high"
+      })
+    );
   });
 });

@@ -674,6 +674,153 @@ describe("gateway server", () => {
     await expect(fs.readFile(bridgeLogPath, "utf8")).rejects.toThrow();
   });
 
+  it("routes native input responses through the gateway and resumes the turn", async () => {
+    const { adapterLogPath, repoRoot, runtime } = await createRuntime();
+
+    const createShared = await runtime.app.inject({
+      method: "POST",
+      url: "/threads/shared",
+      payload: {
+        actor_id: "phone",
+        request_id: "native-input-create",
+        repo_root: repoRoot
+      }
+    });
+    expect(createShared.statusCode).toBe(200);
+
+    const threadId = createShared.json().thread.thread_id as string;
+    const startRun = await runtime.app.inject({
+      method: "POST",
+      url: `/threads/${threadId}/runs`,
+      payload: {
+        actor_id: "phone",
+        request_id: "native-input-run",
+        prompt: "[fixture:user-input] Ask the phone for confirmation."
+      }
+    });
+    expect(startRun.statusCode).toBe(200);
+
+    const turnId = startRun.json().turn.turn_id as string;
+    const nativeRequest = await waitFor(
+      () => runtime.store.listNativeRequests(threadId),
+      (requests) => requests.length === 1
+    ).then((requests) => requests[0]!);
+    expect(nativeRequest.status).toBe("requested");
+
+    const queueBeforeResponse = await waitFor(
+      async () => {
+        const response = await runtime.app.inject({
+          method: "GET",
+          url: "/queue"
+        });
+        return response.json() as {
+          entries: Array<{ kind: string; thread_id: string }>;
+        };
+      },
+      (payload) =>
+        payload.entries.some(
+          (entry) => entry.kind === "input" && entry.thread_id === threadId
+        )
+    );
+    expect(
+      queueBeforeResponse.entries.some(
+        (entry) => entry.kind === "input" && entry.thread_id === threadId
+      )
+    ).toBe(true);
+
+    const respond = await runtime.app.inject({
+      method: "POST",
+      url: `/native_requests/${nativeRequest.native_request_id}/respond`,
+      payload: {
+        actor_id: "phone",
+        request_id: "native-input-respond",
+        response_payload: {
+          answers: {
+            answer: {
+              answers: ["phone confirmed"]
+            }
+          }
+        }
+      }
+    });
+    expect(respond.statusCode).toBe(200);
+    expect(respond.json()).toMatchObject({
+      native_request: {
+        native_request_id: nativeRequest.native_request_id,
+        status: "responded"
+      }
+    });
+
+    const patch = await waitFor(
+      () => runtime.store.listPatches(threadId),
+      (patches) => patches.length === 1
+    ).then((patches) => patches[0]!);
+
+    const queueAfterResponse = await waitFor(
+      async () => {
+        const response = await runtime.app.inject({
+          method: "GET",
+          url: "/queue"
+        });
+        return response.json() as {
+          entries: Array<{ kind: string; thread_id: string }>;
+        };
+      },
+      (payload) =>
+        payload.entries.some(
+          (entry) => entry.kind === "patch" && entry.thread_id === threadId
+        )
+    );
+    expect(
+      queueAfterResponse.entries.some(
+        (entry) => entry.kind === "patch" && entry.thread_id === threadId
+      )
+    ).toBe(true);
+
+    const applyPatch = await runtime.app.inject({
+      method: "POST",
+      url: `/patches/${patch.patch_id}/apply`,
+      payload: {
+        actor_id: "phone",
+        request_id: "native-input-apply"
+      }
+    });
+    expect(applyPatch.statusCode).toBe(200);
+    expect(applyPatch.json().patch.status).toBe("applied");
+
+    await waitFor(
+      () => runtime.store.getTurn(turnId),
+      (turn) => turn?.state === "completed"
+    );
+
+    const events = await runtime.app.inject({
+      method: "GET",
+      url: `/threads/${threadId}/events?after_seq=0`
+    });
+    expect(events.statusCode).toBe(200);
+    expect(
+      events
+        .json()
+        .events.some(
+          (event: { event_type: string }) => event.event_type === "native_request.required"
+        )
+    ).toBe(true);
+    expect(
+      events
+        .json()
+        .events.some(
+          (event: { event_type: string }) => event.event_type === "native_request.resolved"
+        )
+    ).toBe(true);
+    expect(
+      events
+        .json()
+        .events.some((event: { event_type: string }) => event.event_type === "patch.ready")
+    ).toBe(true);
+
+    await expect(fs.readFile(adapterLogPath, "utf8")).resolves.toContain("phone confirmed");
+  });
+
   it("marks a shared native thread as updated after phone-side rollback", async () => {
     const { codexHome, repoRoot, runtime } = await createRuntime();
 

@@ -331,6 +331,7 @@ export function OverviewScreen() {
     () => pendingInputEntries.filter((entry) => !isDesktopRecoveryInputEntry(entry)),
     [pendingInputEntries]
   );
+  const otherActionCount = actionRequiredCount - pendingInputEntries.length;
   const leadDesktopRecoveryEntry = desktopRecoveryInputEntries[0] ?? null;
   const desktopRecoverySummary = leadDesktopRecoveryEntry
     ? describePendingInputSummary(
@@ -658,7 +659,25 @@ export function OverviewScreen() {
               </p>
             </div>
             <div className="codex-page-card__meta">
-              {topPriorityInputKind ? (
+              {desktopRecoveryInputEntries.length > 0 ? (
+                <span
+                  className="status-dot tone-warning"
+                >
+                  {localize(locale, {
+                    zh: `${desktopRecoveryInputEntries.length} 条回桌面`,
+                    en: `${desktopRecoveryInputEntries.length} desktop`
+                  })}
+                </span>
+              ) : null}
+              {replyableInputEntries.length > 0 ? (
+                <span className="status-dot">
+                  {localize(locale, {
+                    zh: `${replyableInputEntries.length} 条手机可回`,
+                    en: `${replyableInputEntries.length} reply here`
+                  })}
+                </span>
+              ) : null}
+              {topPriorityInputKind && desktopRecoveryInputEntries.length === 0 && replyableInputEntries.length === 0 ? (
                 <span
                   className={`status-dot ${
                     isDesktopRecoveryInputKind(topPriorityInputKind) ? "tone-warning" : ""
@@ -667,11 +686,16 @@ export function OverviewScreen() {
                   {describeNativeRequestQueueLabel(locale, topPriorityInputKind)}
                 </span>
               ) : null}
+              {otherActionCount > 0 ? (
+                <span className="status-dot">
+                  {localize(locale, {
+                    zh: `${otherActionCount} 条其它事项`,
+                    en: `${otherActionCount} other`
+                  })}
+                </span>
+              ) : null}
               <span className="status-dot">
                 {isZh ? `${runningCount} 条进行中` : `${runningCount} active`}
-              </span>
-              <span className="status-dot">
-                {isZh ? `${actionRequiredCount} 条待回` : `${actionRequiredCount} waiting`}
               </span>
             </div>
             <div className="codex-page-card__footer">

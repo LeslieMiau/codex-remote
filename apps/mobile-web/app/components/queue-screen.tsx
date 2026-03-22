@@ -180,6 +180,7 @@ export function QueueScreen() {
     () => inputEntries.filter((entry) => !isDesktopRecoveryInputEntry(entry)),
     [inputEntries]
   );
+  const otherActionCount = actionableQueue.length - inputEntries.length;
   const leadDesktopRecoveryEntry = desktopRecoveryInputEntries[0] ?? null;
   const desktopRecoverySummary = leadDesktopRecoveryEntry
     ? describePendingInputSummary(
@@ -306,6 +307,25 @@ export function QueueScreen() {
       title={isZh ? "收件箱" : "Inbox"}
       actions={
         <div className="codex-header-cues">
+          {desktopRecoveryInputEntries.length > 0 ? (
+            <span className="status-dot tone-warning">
+              {isZh
+                ? `${desktopRecoveryInputEntries.length} 条回桌面`
+                : `${desktopRecoveryInputEntries.length} desktop`}
+            </span>
+          ) : null}
+          {replyableInputEntries.length > 0 ? (
+            <span className="status-dot">
+              {isZh
+                ? `${replyableInputEntries.length} 条手机可回`
+                : `${replyableInputEntries.length} reply here`}
+            </span>
+          ) : null}
+          {otherActionCount > 0 ? (
+            <span className="status-dot">
+              {isZh ? `${otherActionCount} 条其它事项` : `${otherActionCount} other`}
+            </span>
+          ) : null}
           <span className="state-pill">
             {isZh ? `${actionableQueue.length} 项待处理` : `${actionableQueue.length} items`}
           </span>
@@ -366,7 +386,14 @@ export function QueueScreen() {
           <div className="codex-status-strip__copy">
             <p className="section-label">{isZh ? "快速概览" : "At a glance"}</p>
             <strong>
-              {isZh ? `${actionableQueue.length} 项待处理` : `${actionableQueue.length} items waiting`}
+              {desktopRecoveryInputEntries.length > 0 || replyableInputEntries.length > 0
+                ? localize(locale, {
+                    zh: `手机可回 ${replyableInputEntries.length} 条，回桌面 ${desktopRecoveryInputEntries.length} 条`,
+                    en: `${replyableInputEntries.length} reply here, ${desktopRecoveryInputEntries.length} desktop`
+                  })
+                : isZh
+                  ? `${actionableQueue.length} 项待处理`
+                  : `${actionableQueue.length} items waiting`}
             </strong>
             <p>
               {leadDesktopRecoveryEntry && desktopRecoverySummary

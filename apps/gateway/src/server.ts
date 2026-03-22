@@ -57,6 +57,7 @@ import { slugify } from "./lib/path";
 import { GatewayStore } from "./lib/store";
 import { evaluateTailscaleAccess, type TailscaleAuthConfig } from "./lib/tailscale-auth";
 import { nowIso } from "./lib/time";
+import { createUlid } from "./lib/ulid";
 import {
   CodexCommandBridge,
   type CodexCommandBridgeOptions
@@ -912,19 +913,16 @@ export async function createGatewayServer(
         created_at: timestamp,
         updated_at: timestamp
       });
-      const sharedThread = await commandBridge.startSharedThread({
-        repoRoot: input.repo_root
-      });
       const initialThread = store.saveThread({
         project_id: project.project_id,
-        thread_id: sharedThread.thread_id,
+        thread_id: `shared_pending_${createUlid()}`,
         state: "ready",
         active_turn_id: null,
         pending_turn_ids: [],
         pending_approval_ids: [],
         worktree_path: input.repo_root,
         adapter_kind: "codex-app-server",
-        adapter_thread_ref: sharedThread.thread_id,
+        native_title: input.prompt ? undefined : "New chat",
         last_stream_seq: 0,
         created_at: timestamp,
         updated_at: timestamp
@@ -1382,15 +1380,43 @@ export async function createGatewayServer(
       }
 
       if (thread.title !== command.name) {
-        await commandBridge.renameSharedThread({
-          threadId: thread.adapter_thread_ref ?? thread.thread_id,
-          name: command.name
-        });
-        await bridge.syncThreadNow(thread.thread_id);
+        const shouldRenameLocally =
+          !thread.adapter_thread_ref ||
+          thread.thread_id.startsWith("shared_pending_") ||
+          thread.sync_state === "sync_pending";
+
+        if (!shouldRenameLocally) {
+          try {
+            await commandBridge.renameSharedThread({
+              threadId: thread.adapter_thread_ref ?? thread.thread_id,
+              name: command.name
+            });
+            await bridge.syncThreadNow(thread.thread_id);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (!/thread not found/i.test(message)) {
+              throw error;
+            }
+          }
+        }
+
+        const mirroredThread =
+          store.getThread(thread.thread_id) ??
+          (thread.adapter_thread_ref
+            ? store.findThreadByAdapterRef(thread.adapter_thread_ref)
+            : undefined);
+        if (mirroredThread) {
+          store.saveThread({
+            ...mirroredThread,
+            native_title: command.name,
+            updated_at: nowIso()
+          });
+        }
       }
 
       const updatedThread =
         (await bridge.getThread(thread.thread_id)) ??
+        fallbackThreadFromStore(store, thread.thread_id) ??
         ({
           ...thread,
           title: command.name

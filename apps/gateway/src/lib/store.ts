@@ -546,7 +546,17 @@ export class GatewayStore {
   findThreadByAdapterRef(adapterThreadRef: string): ThreadSnapshot | undefined {
     return mapThread(
       this.database
-        .prepare("SELECT * FROM thread_snapshots WHERE adapter_thread_ref = ?")
+        .prepare(
+          `
+            SELECT *
+            FROM thread_snapshots
+            WHERE adapter_thread_ref = ?
+            ORDER BY
+              CASE WHEN thread_id = adapter_thread_ref THEN 1 ELSE 0 END ASC,
+              updated_at DESC
+            LIMIT 1
+          `
+        )
         .get<Record<string, unknown>>(adapterThreadRef)
     );
   }

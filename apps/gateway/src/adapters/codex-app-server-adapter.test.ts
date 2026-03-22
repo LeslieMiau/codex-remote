@@ -298,6 +298,27 @@ describe("CodexAppServerAdapter", () => {
     expect(secondLog).toContain("request:turn/start");
   });
 
+  it("keeps using an existing thread when resume reports no active rollout", async () => {
+    const logRoot = await createTempDir();
+    cleanupRoots.push(logRoot);
+    const logPath = path.join(logRoot, "fake-server-resume-skipped.log");
+
+    const run = await runAdapterTurn({
+      adapterThreadRef: "remote-thread-no-rollout",
+      logPath,
+      turnId: "turn-resume-skipped"
+    });
+    cleanupRoots.push(run.root);
+
+    expect(run.result.kind).toBe("completed");
+    expect(run.threadBindings).toEqual([]);
+
+    const log = await fs.readFile(logPath, "utf8");
+    expect(log).toContain("request:thread/resume");
+    expect(log).not.toContain("request:thread/start");
+    expect(log).toContain("request:turn/start");
+  });
+
   it("routes approval, user input, and test completion callbacks through the adapter", async () => {
     const logRoot = await createTempDir();
     cleanupRoots.push(logRoot);

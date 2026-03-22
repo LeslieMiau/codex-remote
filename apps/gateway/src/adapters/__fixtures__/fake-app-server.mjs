@@ -236,7 +236,15 @@ async function handleRequest(message) {
   }
 
   if (message.method === "thread/resume") {
-    if (message.params?.threadId !== "remote-thread-1") {
+    if (
+      message.params?.threadId !== "remote-thread-1" &&
+      message.params?.threadId !== "remote-thread-no-rollout"
+    ) {
+      respondError(message.id, -32000, "no rollout found for thread id");
+      return;
+    }
+
+    if (message.params?.threadId === "remote-thread-no-rollout") {
       respondError(message.id, -32000, "no rollout found for thread id");
       return;
     }
@@ -253,6 +261,8 @@ async function handleRequest(message) {
   if (message.method === "turn/start") {
     turnCounter += 1;
     currentCwd = typeof message.params?.cwd === "string" ? message.params.cwd : currentCwd;
+    remoteThreadId =
+      typeof message.params?.threadId === "string" ? message.params.threadId : remoteThreadId;
     remoteTurnId = `remote-turn-${turnCounter}`;
     const promptText = readPrompt(message.params);
     log(`turn-input:${JSON.stringify(message.params?.input ?? [])}`);

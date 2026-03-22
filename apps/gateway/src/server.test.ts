@@ -210,7 +210,7 @@ afterEach(async () => {
 
 describe("gateway server", () => {
   it("boots a shared thread and completes the approval -> patch -> apply flow", async () => {
-    const { adapterLogPath, bridgeLogPath, repoRoot, runtime } = await createRuntime();
+    const { adapterLogPath, repoRoot, runtime } = await createRuntime();
 
     const createShared = await runtime.app.inject({
       method: "POST",
@@ -368,7 +368,7 @@ describe("gateway server", () => {
         )
     ).toBe(true);
 
-    await expect(fs.readFile(bridgeLogPath, "utf8")).resolves.toContain("request:thread/start");
+    await expect(fs.readFile(adapterLogPath, "utf8")).resolves.toContain("request:thread/start");
     await expect(fs.readFile(adapterLogPath, "utf8")).resolves.toContain("request:turn/start");
   });
 

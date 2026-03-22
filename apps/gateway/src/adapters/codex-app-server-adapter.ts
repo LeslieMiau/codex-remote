@@ -1471,7 +1471,6 @@ export class CodexAppServerAdapter implements Adapter {
                 thread_id: remoteThreadId
               }
             });
-            remoteThreadId = null;
           }
         }
 

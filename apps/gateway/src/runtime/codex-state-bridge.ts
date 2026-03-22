@@ -13,6 +13,7 @@ import {
   type CodexQueueEntry,
   type CodexSyncState,
   type CodexThread,
+  type ThreadSnapshot,
   type CodexTranscriptPage,
   type CodexTimeline,
   type CodexTimelineItem,
@@ -444,8 +445,8 @@ export class CodexStateBridge {
       }
 
       const existing =
-        this.options.store.getThread(thread.id) ??
-        this.options.store.findThreadByAdapterRef(thread.id);
+        this.options.store.findThreadByAdapterRef(thread.id) ??
+        this.options.store.getThread(thread.id);
       const publicThreadId = existing?.thread_id ?? thread.id;
       const projectId = existing?.project_id ?? projectIdFromRepoRoot(thread.cwd);
       this.options.store.saveProject({
@@ -543,9 +544,31 @@ export class CodexStateBridge {
   async getOverview(input?: { includeArchived?: boolean }): Promise<CodexOverview> {
     await this.syncStore();
 
-    const allThreads = (await Promise.all(
+    const nativeThreads = await Promise.all(
       [...this.nativeThreads.values()].map((thread) => this.buildCodexThread(thread))
-    ))
+    );
+    const threadsByPublicId = new Map(
+      nativeThreads.map((thread) => [thread.thread_id, thread] as const)
+    );
+
+    for (const mirroredThread of this.options.store.listThreads()) {
+      if (threadsByPublicId.has(mirroredThread.thread_id)) {
+        continue;
+      }
+      if (
+        mirroredThread.adapter_thread_ref &&
+        this.nativeThreads.has(mirroredThread.adapter_thread_ref)
+      ) {
+        continue;
+      }
+
+      const pendingThread = this.buildMirroredOnlyThread(mirroredThread);
+      if (pendingThread) {
+        threadsByPublicId.set(pendingThread.thread_id, pendingThread);
+      }
+    }
+
+    const allThreads = [...threadsByPublicId.values()]
       .sort((left, right) => right.updated_at.localeCompare(left.updated_at));
     const activeThreads = allThreads.filter((thread) => !thread.archived);
     const visibleThreads = input?.includeArchived ? allThreads : activeThreads;
@@ -574,7 +597,14 @@ export class CodexStateBridge {
   async getThread(threadId: string): Promise<CodexThread | null> {
     await this.syncStore();
     const thread = this.getNativeThreadByPublicId(threadId);
-    return thread ? this.buildCodexThread(thread) : null;
+    if (thread) {
+      return this.buildCodexThread(thread);
+    }
+
+    const mirrored =
+      this.options.store.getThread(threadId) ??
+      this.options.store.findThreadByAdapterRef(threadId);
+    return mirrored ? this.buildMirroredOnlyThread(mirrored) : null;
   }
 
   async getTimeline(threadId: string): Promise<CodexTimeline | null> {
@@ -791,6 +821,78 @@ export class CodexStateBridge {
       native_active_flags: mirrored?.native_active_flags ?? [],
       created_at: toIsoTimestamp(nativeThread.created_at),
       updated_at: toIsoTimestamp(nativeThread.updated_at)
+    };
+  }
+
+  private buildMirroredOnlyThread(thread: ThreadSnapshot): CodexThread | null {
+    const project = this.options.store.getProject(thread.project_id);
+    if (!project) {
+      return null;
+    }
+
+    const turns = this.options.store.listTurns(thread.thread_id);
+    const pendingApprovals = this.listNativeApprovals(thread.thread_id).filter(
+      (approval) => approval.status === "requested"
+    ).length;
+    const pendingNativeRequests = this.options.store
+      .listNativeRequests(thread.thread_id)
+      .filter((request) => request.status === "requested").length;
+    const pendingPatches = this.options.store
+      .listPatches(thread.thread_id)
+      .filter((patch) => patch.status !== "applied" && patch.status !== "discarded").length;
+
+    let state: CodexThread["state"] = "ready";
+    if (thread.state === "archived" || thread.native_archived) {
+      state = "archived";
+    } else if (thread.state === "failed") {
+      state = "failed";
+    } else if (thread.state === "interrupted") {
+      state = "interrupted";
+    } else if (pendingNativeRequests > 0 || thread.state === "waiting_input") {
+      state = "waiting_input";
+    } else if (pendingApprovals > 0 || thread.state === "waiting_approval") {
+      state = "waiting_approval";
+    } else if (pendingPatches > 0) {
+      state = "needs_review";
+    } else if (thread.active_turn_id || thread.state === "running") {
+      state = "running";
+    } else if (thread.state === "completed") {
+      state = "completed";
+    }
+
+    const syncState: CodexSyncState =
+      !thread.adapter_thread_ref ||
+      state === "running" ||
+      state === "waiting_approval" ||
+      state === "waiting_input"
+        ? "sync_pending"
+        : "sync_failed";
+
+    return {
+      thread_id: thread.thread_id,
+      project_id: thread.project_id,
+      title: thread.native_title ?? turns.at(0)?.prompt ?? thread.thread_id,
+      project_label: projectLabelFromRepoRoot(project.repo_root),
+      repo_root: project.repo_root,
+      source: thread.adapter_kind ?? "gateway_fallback",
+      state,
+      archived: Boolean(thread.native_archived || thread.state === "archived"),
+      has_active_run:
+        Boolean(thread.active_turn_id) &&
+        (state === "running" || state === "waiting_approval"),
+      pending_approvals: pendingApprovals,
+      pending_patches: pendingPatches,
+      pending_native_requests: pendingNativeRequests,
+      worktree_path: thread.worktree_path,
+      active_turn_id: thread.active_turn_id,
+      last_stream_seq: thread.last_stream_seq,
+      sync_state: syncState,
+      adapter_thread_ref: thread.adapter_thread_ref,
+      native_status_type: thread.native_status_type,
+      native_active_flags: thread.native_active_flags,
+      native_token_usage: thread.native_token_usage,
+      created_at: thread.created_at ?? thread.updated_at,
+      updated_at: thread.updated_at
     };
   }
 
@@ -1416,8 +1518,10 @@ export class CodexStateBridge {
   }
 
   private getMirroredThread(nativeThreadId: string) {
-    return this.options.store.getThread(nativeThreadId) ??
-      this.options.store.findThreadByAdapterRef(nativeThreadId);
+    return (
+      this.options.store.findThreadByAdapterRef(nativeThreadId) ??
+      this.options.store.getThread(nativeThreadId)
+    );
   }
 
   private getPublicThreadId(nativeThreadId: string) {

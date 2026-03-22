@@ -72,6 +72,24 @@ async function initTempRepo(repoRoot: string) {
   }
 }
 
+async function waitFor<T>(
+  read: () => Promise<T>,
+  predicate: (value: T) => boolean,
+  timeoutMs: number
+) {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const value = await read();
+    if (predicate(value)) {
+      return value;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+
+  return await read();
+}
+
 async function createRuntime() {
   const config = realAppServerTestConfig();
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "gateway-real-app-server-"));
@@ -205,6 +223,59 @@ describe("real-app-server smoke", () => {
         rate_limits_by_limit_id: expect.any(Object),
         requires_openai_auth: expect.any(Boolean)
       });
+    },
+    config.timeoutMs
+  );
+
+  it(
+    "keeps a prompted shared thread addressable through later thread actions",
+    async () => {
+      const { runtime, repoRoot } = await createRuntime();
+
+      const createShared = await runtime.app.inject({
+        method: "POST",
+        payload: {
+          actor_id: "smoke",
+          repo_root: repoRoot,
+          request_id: "real-smoke-prompted",
+          prompt: "Reply with exactly OK and nothing else."
+        },
+        url: "/threads/shared"
+      });
+      expect(createShared.statusCode).toBe(200);
+
+      const createdThreadId = createShared.json().thread.thread_id as string;
+      expect(createdThreadId).toContain("shared_pending_");
+
+      await waitFor(
+        async () => runtime.store.getThread(createdThreadId),
+        (thread) => Boolean(thread?.adapter_thread_ref),
+        config.timeoutMs
+      );
+
+      const encodedThreadId = encodeURIComponent(createdThreadId);
+      const renameResponse = await runtime.app.inject({
+        method: "POST",
+        payload: {
+          actor_id: "smoke",
+          request_id: "real-smoke-rename",
+          name: "Renamed from smoke"
+        },
+        url: `/threads/${encodedThreadId}/name`
+      });
+      expect(renameResponse.statusCode).toBe(200);
+      expect(renameResponse.json().thread.thread_id).toBe(createdThreadId);
+
+      const overviewResponse = await runtime.app.inject({
+        method: "GET",
+        url: "/overview"
+      });
+      expect(overviewResponse.statusCode).toBe(200);
+      expect(
+        overviewResponse
+          .json()
+          .threads.some((thread: { thread_id: string }) => thread.thread_id === createdThreadId)
+      ).toBe(true);
     },
     config.timeoutMs
   );

@@ -48,6 +48,8 @@ import { SkeletonCard } from "./skeleton";
 
 const POLL_INTERVAL_MS = 2_000;
 
+type InputFocusFilter = "all" | "desktop" | "replyable";
+
 function getAvatarLabel(value: string) {
   return Array.from(value.trim())[0]?.toUpperCase() ?? "#";
 }
@@ -195,6 +197,36 @@ function isDesktopRecoveryInputEntry(entry: CodexQueueEntry) {
   return entry.kind === "input" && isDesktopRecoveryInputKind(entry.native_request_kind);
 }
 
+function matchesInputFocusFilter(
+  kind: CodexQueueEntry["native_request_kind"] | undefined,
+  filter: InputFocusFilter
+) {
+  if (filter === "all") {
+    return true;
+  }
+
+  if (filter === "desktop") {
+    return isDesktopRecoveryInputKind(kind);
+  }
+
+  return kind === "user_input";
+}
+
+function describeInputFocusFilter(
+  locale: "zh" | "en",
+  filter: InputFocusFilter
+) {
+  if (filter === "desktop") {
+    return localize(locale, { zh: "回桌面", en: "Desktop" });
+  }
+
+  if (filter === "replyable") {
+    return localize(locale, { zh: "手机可回", en: "Reply here" });
+  }
+
+  return localize(locale, { zh: "全部", en: "All" });
+}
+
 export function OverviewScreen() {
   const router = useRouter();
   const { locale } = useLocale();
@@ -211,6 +243,7 @@ export function OverviewScreen() {
   const [showAllProjects, setShowAllProjects] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [threadQuery, setThreadQuery] = useState("");
+  const [inputFocusFilter, setInputFocusFilter] = useState<InputFocusFilter>("all");
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
   const [lastSuccessfulSyncAt, setLastSuccessfulSyncAt] = useState<string | null>(null);
   const inFlightRef = useRef(false);
@@ -359,6 +392,16 @@ export function OverviewScreen() {
 
     return kinds;
   }, [pendingInputEntries]);
+  const filteredDesktopRecoveryInputEntries = useMemo(
+    () =>
+      inputFocusFilter === "replyable" ? [] : desktopRecoveryInputEntries,
+    [desktopRecoveryInputEntries, inputFocusFilter]
+  );
+  const filteredReplyableInputEntries = useMemo(
+    () =>
+      inputFocusFilter === "desktop" ? [] : replyableInputEntries,
+    [inputFocusFilter, replyableInputEntries]
+  );
   const repoGroups = useMemo(() => {
     const groups = new Map<
       string,
@@ -411,6 +454,18 @@ export function OverviewScreen() {
       ).sort(compareThreadsForMobile),
     [filteredThreads]
   );
+  const filteredPriorityThreads = useMemo(
+    () =>
+      inputFocusFilter === "all"
+        ? priorityThreads
+        : priorityThreads.filter((thread) =>
+            matchesInputFocusFilter(
+              pendingInputKindsByThreadId.get(thread.thread_id),
+              inputFocusFilter
+            )
+          ),
+    [inputFocusFilter, pendingInputKindsByThreadId, priorityThreads]
+  );
   const inboxOtherEntries = useMemo(
     () =>
       [...(overview?.queue ?? [])]
@@ -419,8 +474,25 @@ export function OverviewScreen() {
         .slice(0, 3),
     [overview]
   );
-  const visibleGroups = showAllProjects ? repoGroups : repoGroups.slice(0, 3);
-  const hiddenGroupCount = Math.max(repoGroups.length - visibleGroups.length, 0);
+  const filteredRepoGroups = useMemo(
+    () =>
+      inputFocusFilter === "all"
+        ? repoGroups
+        : repoGroups
+            .map((group) => ({
+              ...group,
+              threads: group.threads.filter((thread) =>
+                matchesInputFocusFilter(
+                  pendingInputKindsByThreadId.get(thread.thread_id),
+                  inputFocusFilter
+                )
+              )
+            }))
+            .filter((group) => group.threads.length > 0),
+    [inputFocusFilter, pendingInputKindsByThreadId, repoGroups]
+  );
+  const visibleGroups = showAllProjects ? filteredRepoGroups : filteredRepoGroups.slice(0, 3);
+  const hiddenGroupCount = Math.max(filteredRepoGroups.length - visibleGroups.length, 0);
   const matchingThreadCount = filteredThreads.length;
 
   function toggleProject(projectId: string) {
@@ -794,13 +866,59 @@ export function OverviewScreen() {
             ) : null}
           </section>
 
+          <section className="codex-page-card">
+            <div className="codex-page-section__header">
+              <div>
+                <p className="section-label">
+                  {localize(locale, { zh: "输入筛选", en: "Input focus" })}
+                </p>
+                <h2>
+                  {localize(locale, {
+                    zh: "按处理路径查看待办聊天",
+                    en: "Sort chats by recovery path"
+                  })}
+                </h2>
+              </div>
+            </div>
+            <div className="codex-inline-pills">
+              {(["all", "desktop", "replyable"] as const).map((filter) => (
+                <button
+                  key={filter}
+                  className={`chrome-button ${inputFocusFilter === filter ? "is-active" : ""}`}
+                  onClick={() => setInputFocusFilter(filter)}
+                  type="button"
+                >
+                  {describeInputFocusFilter(locale, filter)}
+                </button>
+              ))}
+            </div>
+            <p className="threads-home__search-note">
+              {inputFocusFilter === "all"
+                ? localize(locale, {
+                    zh: "显示全部待办聊天；切到回桌面或手机可回，可以更快聚焦你现在能处理的那一类。",
+                    en: "Showing all waiting chats. Switch to desktop or reply-here to focus on the kind you can handle next."
+                  })
+                : inputFocusFilter === "desktop"
+                  ? localize(locale, {
+                      zh: "当前只看建议回桌面继续的聊天；批准、审查和其它待办会先隐藏。",
+                      en: "Only chats that usually continue on desktop are shown right now. Approvals, reviews, and other items are temporarily hidden."
+                    })
+                  : localize(locale, {
+                      zh: "当前只看可以直接在手机回复的聊天。",
+                      en: "Only chats you can finish from the phone are shown right now."
+                    })}
+            </p>
+          </section>
+
           <section className="codex-page-section">
             <div className="codex-page-section__header">
               <div>
                 <p className="section-label">{isZh ? "收件箱" : "Inbox"}</p>
                 <h2>
-                {leadInputEntry &&
-                  isDesktopOrientedNativeRequest(leadInputEntry.native_request_kind)
+                {inputFocusFilter === "desktop" ||
+                (inputFocusFilter === "all" &&
+                  leadInputEntry &&
+                  isDesktopOrientedNativeRequest(leadInputEntry.native_request_kind))
                     ? localize(locale, { zh: "先打开这些", en: "Open these first" })
                     : localize(locale, { zh: "优先回复这些", en: "Reply to these first" })}
                 </h2>
@@ -810,11 +928,11 @@ export function OverviewScreen() {
               </Link>
             </div>
 
-            {desktopRecoveryInputEntries.length > 0 ||
-            replyableInputEntries.length > 0 ||
-            inboxOtherEntries.length > 0 ? (
+            {filteredDesktopRecoveryInputEntries.length > 0 ||
+            filteredReplyableInputEntries.length > 0 ||
+            (inputFocusFilter === "all" && inboxOtherEntries.length > 0) ? (
               <div className="codex-page-stack">
-                {desktopRecoveryInputEntries.length > 0 ? (
+                {filteredDesktopRecoveryInputEntries.length > 0 ? (
                   <div className="codex-page-stack">
                     <div className="codex-page-section__header">
                       <div>
@@ -830,14 +948,14 @@ export function OverviewScreen() {
                       </div>
                     </div>
                     <div className="codex-inbox-focus">
-                      {desktopRecoveryInputEntries.slice(0, 2).map((entry) =>
+                      {filteredDesktopRecoveryInputEntries.slice(0, 2).map((entry) =>
                         renderInboxEntry(entry)
                       )}
                     </div>
                   </div>
                 ) : null}
 
-                {replyableInputEntries.length > 0 ? (
+                {filteredReplyableInputEntries.length > 0 ? (
                   <div className="codex-page-stack">
                     <div className="codex-page-section__header">
                       <div>
@@ -853,12 +971,14 @@ export function OverviewScreen() {
                       </div>
                     </div>
                     <div className="codex-inbox-focus">
-                      {replyableInputEntries.slice(0, 2).map((entry) => renderInboxEntry(entry))}
+                      {filteredReplyableInputEntries.slice(0, 2).map((entry) =>
+                        renderInboxEntry(entry)
+                      )}
                     </div>
                   </div>
                 ) : null}
 
-                {inboxOtherEntries.length > 0 ? (
+                {inputFocusFilter === "all" && inboxOtherEntries.length > 0 ? (
                   <div className="codex-page-stack">
                     <div className="codex-page-section__header">
                       <div>
@@ -874,27 +994,54 @@ export function OverviewScreen() {
               </div>
             ) : (
               <section className="codex-empty-state">
-                <p className="eyebrow">{isZh ? "消息清空" : "All caught up"}</p>
+                <p className="eyebrow">
+                  {inputFocusFilter === "all"
+                    ? isZh
+                      ? "消息清空"
+                      : "All caught up"
+                    : isZh
+                      ? "当前筛选为空"
+                      : "Nothing in this filter"}
+                </p>
                 <h2>{isZh ? "现在没有急着要回的消息。" : "No urgent messages waiting."}</h2>
                 <p>
-                  {isZh
-                    ? "你仍然可以回到最近对话继续聊，或者从这里发起一条新聊天。"
-                    : "You can still jump back into recent chats or start a fresh one from here."}
+                  {inputFocusFilter === "all"
+                    ? isZh
+                      ? "你仍然可以回到最近对话继续聊，或者从这里发起一条新聊天。"
+                      : "You can still jump back into recent chats or start a fresh one from here."
+                    : isZh
+                      ? "切回“全部”可以查看其它类型的待办聊天。"
+                      : "Switch back to All to see the other waiting chats again."}
                 </p>
               </section>
             )}
           </section>
 
-          {priorityThreads.length > 0 ? (
+          {filteredPriorityThreads.length > 0 ? (
             <section className="codex-page-section">
               <div className="codex-page-section__header">
                 <div>
                   <p className="section-label">{isZh ? "继续这些聊天" : "Pick up here"}</p>
-                  <h2>{isZh ? "这些对话还在等你继续" : "Chats waiting on you"}</h2>
+                  <h2>
+                    {inputFocusFilter === "desktop"
+                      ? localize(locale, {
+                          zh: "这些对话通常要回桌面继续",
+                          en: "These chats usually continue on desktop"
+                        })
+                      : inputFocusFilter === "replyable"
+                        ? localize(locale, {
+                            zh: "这些对话可以直接在手机处理",
+                            en: "These chats can be handled from the phone"
+                          })
+                        : localize(locale, {
+                            zh: "这些对话还在等你继续",
+                            en: "Chats waiting on you"
+                          })}
+                  </h2>
                 </div>
               </div>
               <div className="codex-list-stack">
-                {priorityThreads.slice(0, 4).map((thread) => (
+                {filteredPriorityThreads.slice(0, 4).map((thread) => (
                   (() => {
                     const pendingInputKind = pendingInputKindsByThreadId.get(thread.thread_id);
                     const isDesktopRecovery = isDesktopRecoveryInputKind(pendingInputKind);
@@ -1127,14 +1274,32 @@ export function OverviewScreen() {
               </div>
             ) : (
               <section className="codex-empty-state">
-                <p className="eyebrow">{isZh ? "没有匹配" : "No matches"}</p>
+                <p className="eyebrow">
+                  {inputFocusFilter === "all"
+                    ? isZh
+                      ? "没有匹配"
+                      : "No matches"
+                    : isZh
+                      ? "当前筛选没有结果"
+                      : "No chats in this filter"}
+                </p>
                 <h2>
-                  {isZh ? "这次搜索还没有找到聊天。" : "This search does not match any chats yet."}
+                  {inputFocusFilter === "all"
+                    ? isZh
+                      ? "这次搜索还没有找到聊天。"
+                      : "This search does not match any chats yet."
+                    : isZh
+                      ? "当前筛选下没有聊天。"
+                      : "No chats match the current filter."}
                 </h2>
                 <p>
-                  {isZh
-                    ? "试试换成项目名、仓库路径，或者清空搜索看看最近同步过的全部对话。"
-                    : "Try a project name, part of the repo path, or clear the search to browse every synced chat again."}
+                  {inputFocusFilter === "all"
+                    ? isZh
+                      ? "试试换成项目名、仓库路径，或者清空搜索看看最近同步过的全部对话。"
+                      : "Try a project name, part of the repo path, or clear the search to browse every synced chat again."
+                    : isZh
+                      ? "切回“全部”或换一个输入筛选，再看看其它等待中的聊天。"
+                      : "Switch back to All or try a different input filter to browse the other waiting chats."}
                 </p>
               </section>
             )}

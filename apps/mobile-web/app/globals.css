@@ -3683,6 +3683,12 @@ body {
   pointer-events: none;
 }
 
+.chrome-button.is-active {
+  background: rgba(124, 177, 255, 0.14);
+  border-color: rgba(124, 177, 255, 0.32);
+  color: var(--text);
+}
+
 .codex-image-lightbox {
   display: grid;
   place-items: center;

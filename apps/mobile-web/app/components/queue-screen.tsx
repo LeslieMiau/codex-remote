@@ -18,7 +18,8 @@ import {
   describeNativeRequestAttentionLabel,
   describeNativeRequestQueueLabel,
   describePendingInputSummary,
-  describeQueueInputPreview
+  describeQueueInputPreview,
+  isDesktopOrientedNativeRequest
 } from "../lib/native-input-copy";
 import {
   compareQueueEntriesForMobile,
@@ -75,6 +76,10 @@ function describeQueuePreview(locale: "zh" | "en", entry: CodexQueueEntry) {
         en: `Codex is still working on it. ${detail}`
       });
   }
+}
+
+function isDesktopRecoveryInputEntry(entry: CodexQueueEntry) {
+  return entry.kind === "input" && isDesktopOrientedNativeRequest(entry.native_request_kind);
 }
 
 export function QueueScreen() {
@@ -167,12 +172,28 @@ export function QueueScreen() {
     () => actionableQueue.filter((entry) => entry.kind === "input"),
     [actionableQueue]
   );
-  const leadInputEntry = inputEntries[0] ?? null;
-  const inputSummary = leadInputEntry
+  const desktopRecoveryInputEntries = useMemo(
+    () => inputEntries.filter((entry) => isDesktopRecoveryInputEntry(entry)),
+    [inputEntries]
+  );
+  const replyableInputEntries = useMemo(
+    () => inputEntries.filter((entry) => !isDesktopRecoveryInputEntry(entry)),
+    [inputEntries]
+  );
+  const leadDesktopRecoveryEntry = desktopRecoveryInputEntries[0] ?? null;
+  const desktopRecoverySummary = leadDesktopRecoveryEntry
     ? describePendingInputSummary(
         locale,
-        inputEntries.length,
-        leadInputEntry.native_request_kind ?? "user_input"
+        desktopRecoveryInputEntries.length,
+        leadDesktopRecoveryEntry.native_request_kind ?? "user_input"
+      )
+    : null;
+  const leadReplyableEntry = replyableInputEntries[0] ?? null;
+  const replyableSummary = leadReplyableEntry
+    ? describePendingInputSummary(
+        locale,
+        replyableInputEntries.length,
+        leadReplyableEntry.native_request_kind ?? "user_input"
       )
     : null;
   const groupedQueue = useMemo(() => {
@@ -216,7 +237,63 @@ export function QueueScreen() {
       return left.label.localeCompare(right.label);
     });
   }, [actionableQueue, overview]);
-  const focusEntries = actionableQueue.slice(0, 3);
+  const priorityEntries = actionableQueue.filter((entry) => entry.kind !== "input").slice(0, 3);
+
+  function renderPriorityCard(entry: CodexQueueEntry) {
+    return (
+      <Link
+        key={entry.entry_id}
+        className={`codex-focus-item ${isDesktopRecoveryInputEntry(entry) ? "is-desktop-recovery" : ""}`}
+        href={buildQueueHref(entry)}
+        onClick={() => setStoredLastActiveThread(entry.thread_id)}
+      >
+        <div className="codex-chat-row">
+          <div className="codex-chat-avatar">{getAvatarLabel(entry.title)}</div>
+          <div className="codex-thread-list-item__body">
+            <div className="codex-thread-list-item__head">
+              <div>
+                <strong>{entry.title}</strong>
+                <p className="codex-thread-list-item__preview">
+                  {describeQueuePreview(locale, entry)}
+                </p>
+              </div>
+              <div className="codex-thread-list-item__aside">
+                <span className="codex-thread-list-item__time">
+                  {formatDateTime(locale, entry.timestamp)}
+                </span>
+                <span className="codex-chat-count">1</span>
+              </div>
+            </div>
+            <div className="codex-focus-item__meta">
+              <span className="cue-pill">
+                {entry.kind === "input"
+                  ? describeNativeRequestQueueLabel(
+                      locale,
+                      entry.native_request_kind ?? "user_input"
+                    )
+                  : translateQueueKind(locale, entry.kind)}
+              </span>
+              {entry.kind === "input" ? (
+                <span
+                  className={`status-dot ${
+                    isDesktopRecoveryInputEntry(entry) ? "tone-warning" : ""
+                  }`}
+                >
+                  {describeNativeRequestAttentionLabel(
+                    locale,
+                    entry.native_request_kind ?? "user_input"
+                  )}
+                </span>
+              ) : null}
+              <span className="status-dot">
+                {translateStatusText(locale, entry.status)}
+              </span>
+            </div>
+          </div>
+        </div>
+      </Link>
+    );
+  }
 
   return (
     <CodexShell
@@ -251,19 +328,36 @@ export function QueueScreen() {
           </section>
         ) : null}
 
-        {leadInputEntry && inputSummary ? (
+        {leadDesktopRecoveryEntry && desktopRecoverySummary ? (
           <section className="codex-status-strip tone-warning">
             <div className="codex-status-strip__copy">
-              <p className="section-label">{inputSummary.eyebrow}</p>
-              <strong>{inputSummary.title}</strong>
-              <p>{inputSummary.body}</p>
+              <p className="section-label">{desktopRecoverySummary.eyebrow}</p>
+              <strong>{desktopRecoverySummary.title}</strong>
+              <p>{desktopRecoverySummary.body}</p>
             </div>
             <Link
               className="primary-button"
-              href={buildQueueHref(leadInputEntry)}
-              onClick={() => setStoredLastActiveThread(leadInputEntry.thread_id)}
+              href={buildQueueHref(leadDesktopRecoveryEntry)}
+              onClick={() => setStoredLastActiveThread(leadDesktopRecoveryEntry.thread_id)}
             >
-              {inputSummary.cta}
+              {desktopRecoverySummary.cta}
+            </Link>
+          </section>
+        ) : null}
+
+        {leadReplyableEntry && replyableSummary ? (
+          <section className="codex-status-strip">
+            <div className="codex-status-strip__copy">
+              <p className="section-label">{replyableSummary.eyebrow}</p>
+              <strong>{replyableSummary.title}</strong>
+              <p>{replyableSummary.body}</p>
+            </div>
+            <Link
+              className="secondary-button"
+              href={buildQueueHref(leadReplyableEntry)}
+              onClick={() => setStoredLastActiveThread(leadReplyableEntry.thread_id)}
+            >
+              {replyableSummary.cta}
             </Link>
           </section>
         ) : null}
@@ -275,15 +369,26 @@ export function QueueScreen() {
               {isZh ? `${actionableQueue.length} 项待处理` : `${actionableQueue.length} items waiting`}
             </strong>
             <p>
-              {leadInputEntry && inputSummary
-                ? inputSummary.body
+              {leadDesktopRecoveryEntry && desktopRecoverySummary
+                ? desktopRecoverySummary.body
+                : leadReplyableEntry && replyableSummary
+                  ? replyableSummary.body
                 : isZh
                   ? "把它当成聊天里的未读提醒看就行，先点开要你确认和审查的那几条。"
                   : "Think of this like unread alerts: approvals and reviews come first, then failed follow-ups."}
             </p>
           </div>
           <div className="codex-queue-summary">
-            <span className="status-dot">{isZh ? `${queueSummary.inputs} 输入` : `${queueSummary.inputs} inputs`}</span>
+            <span className="status-dot">
+              {isZh
+                ? `${replyableInputEntries.length} 条手机可回`
+                : `${replyableInputEntries.length} reply here`}
+            </span>
+            <span className="status-dot">
+              {isZh
+                ? `${desktopRecoveryInputEntries.length} 条回桌面`
+                : `${desktopRecoveryInputEntries.length} desktop`}
+            </span>
             <span className="status-dot">{isZh ? `${queueSummary.approvals} 批准` : `${queueSummary.approvals} approvals`}</span>
             <span className="status-dot">{isZh ? `${queueSummary.patches} 审查` : `${queueSummary.patches} reviews`}</span>
             <span className="status-dot">{isZh ? `${queueSummary.failures} 失败` : `${queueSummary.failures} failed`}</span>
@@ -291,77 +396,58 @@ export function QueueScreen() {
           </div>
         </section>
 
-        {focusEntries.length > 0 ? (
+        {desktopRecoveryInputEntries.length > 0 ? (
           <section className="codex-page-section">
             <div className="codex-page-section__header">
               <div>
-                <p className="section-label">{isZh ? "优先级" : "Priority"}</p>
-                <h2>{isZh ? "先打开这几条" : "Open these now"}</h2>
+                <p className="section-label">
+                  {localize(locale, { zh: "桌面恢复", en: "Desktop recovery" })}
+                </p>
+                <h2>
+                  {localize(locale, {
+                    zh: "这些聊天建议回桌面继续",
+                    en: "These chats usually continue on desktop"
+                  })}
+                </h2>
               </div>
             </div>
             <div className="codex-inbox-focus">
-              {focusEntries.map((entry) => (
-                <Link
-                  key={entry.entry_id}
-                  className={`codex-focus-item ${
-                    entry.kind === "input" &&
-                    (entry.native_request_kind === "dynamic_tool" ||
-                      entry.native_request_kind === "auth_refresh")
-                      ? "is-desktop-recovery"
-                      : ""
-                  }`}
-                  href={buildQueueHref(entry)}
-                  onClick={() => setStoredLastActiveThread(entry.thread_id)}
-                >
-                  <div className="codex-chat-row">
-                    <div className="codex-chat-avatar">{getAvatarLabel(entry.title)}</div>
-                    <div className="codex-thread-list-item__body">
-                      <div className="codex-thread-list-item__head">
-                        <div>
-                          <strong>{entry.title}</strong>
-                          <p className="codex-thread-list-item__preview">
-                            {describeQueuePreview(locale, entry)}
-                          </p>
-                        </div>
-                        <div className="codex-thread-list-item__aside">
-                          <span className="codex-thread-list-item__time">
-                            {formatDateTime(locale, entry.timestamp)}
-                          </span>
-                          <span className="codex-chat-count">1</span>
-                        </div>
-                      </div>
-                      <div className="codex-focus-item__meta">
-                        <span className="cue-pill">
-                          {entry.kind === "input"
-                            ? describeNativeRequestQueueLabel(
-                                locale,
-                                entry.native_request_kind ?? "user_input"
-                              )
-                            : translateQueueKind(locale, entry.kind)}
-                        </span>
-                        {entry.kind === "input" ? (
-                          <span
-                            className={`status-dot ${
-                              entry.native_request_kind === "dynamic_tool" ||
-                              entry.native_request_kind === "auth_refresh"
-                                ? "tone-warning"
-                                : ""
-                            }`}
-                          >
-                            {describeNativeRequestAttentionLabel(
-                              locale,
-                              entry.native_request_kind ?? "user_input"
-                            )}
-                          </span>
-                        ) : null}
-                        <span className="status-dot">
-                          {translateStatusText(locale, entry.status)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              ))}
+              {desktopRecoveryInputEntries.slice(0, 3).map((entry) => renderPriorityCard(entry))}
+            </div>
+          </section>
+        ) : null}
+
+        {replyableInputEntries.length > 0 ? (
+          <section className="codex-page-section">
+            <div className="codex-page-section__header">
+              <div>
+                <p className="section-label">
+                  {localize(locale, { zh: "手机可回", en: "Reply from phone" })}
+                </p>
+                <h2>
+                  {localize(locale, {
+                    zh: "这些聊天可以直接在手机完成",
+                    en: "You can finish these chats from the phone"
+                  })}
+                </h2>
+              </div>
+            </div>
+            <div className="codex-inbox-focus">
+              {replyableInputEntries.slice(0, 3).map((entry) => renderPriorityCard(entry))}
+            </div>
+          </section>
+        ) : null}
+
+        {priorityEntries.length > 0 ? (
+          <section className="codex-page-section">
+            <div className="codex-page-section__header">
+              <div>
+                <p className="section-label">{isZh ? "其它事项" : "Other items"}</p>
+                <h2>{isZh ? "这些也要尽快处理" : "These still need attention"}</h2>
+              </div>
+            </div>
+            <div className="codex-inbox-focus">
+              {priorityEntries.map((entry) => renderPriorityCard(entry))}
             </div>
           </section>
         ) : null}

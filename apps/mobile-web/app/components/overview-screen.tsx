@@ -57,6 +57,13 @@ function getRepoTail(repoRoot: string) {
   return parts[parts.length - 1] ?? repoRoot;
 }
 
+function buildActionHref(entry: CodexQueueEntry) {
+  if (entry.patch_id) {
+    return buildThreadPatchPath(entry.thread_id, entry.patch_id);
+  }
+  return buildThreadPath(entry.thread_id);
+}
+
 function getThreadBadgeLabel(locale: "zh" | "en", thread: CodexThread) {
   const pendingCount =
     thread.pending_approvals + thread.pending_patches + thread.pending_native_requests;
@@ -184,6 +191,10 @@ function isDesktopRecoveryInputKind(kind: CodexQueueEntry["native_request_kind"]
   return isDesktopOrientedNativeRequest(kind);
 }
 
+function isDesktopRecoveryInputEntry(entry: CodexQueueEntry) {
+  return entry.kind === "input" && isDesktopRecoveryInputKind(entry.native_request_kind);
+}
+
 export function OverviewScreen() {
   const router = useRouter();
   const { locale } = useLocale();
@@ -284,7 +295,7 @@ export function OverviewScreen() {
       null,
     [overview]
   );
-  const focusEntries = useMemo(
+  const priorityEntries = useMemo(
     () =>
       [...(overview?.queue ?? [])]
         .filter((entry) => entry.action_required)
@@ -292,7 +303,7 @@ export function OverviewScreen() {
         .slice(0, 3),
     [overview]
   );
-  const topPriorityEntry = focusEntries[0] ?? null;
+  const topPriorityEntry = priorityEntries[0] ?? null;
   const topPriorityInputKind =
     topPriorityEntry?.kind === "input"
       ? topPriorityEntry.native_request_kind ?? "user_input"
@@ -310,6 +321,30 @@ export function OverviewScreen() {
         locale,
         pendingInputEntries.length,
         leadInputEntry.native_request_kind ?? "user_input"
+      )
+    : null;
+  const desktopRecoveryInputEntries = useMemo(
+    () => pendingInputEntries.filter((entry) => isDesktopRecoveryInputEntry(entry)),
+    [pendingInputEntries]
+  );
+  const replyableInputEntries = useMemo(
+    () => pendingInputEntries.filter((entry) => !isDesktopRecoveryInputEntry(entry)),
+    [pendingInputEntries]
+  );
+  const leadDesktopRecoveryEntry = desktopRecoveryInputEntries[0] ?? null;
+  const desktopRecoverySummary = leadDesktopRecoveryEntry
+    ? describePendingInputSummary(
+        locale,
+        desktopRecoveryInputEntries.length,
+        leadDesktopRecoveryEntry.native_request_kind ?? "user_input"
+      )
+    : null;
+  const leadReplyableEntry = replyableInputEntries[0] ?? null;
+  const replyableSummary = leadReplyableEntry
+    ? describePendingInputSummary(
+        locale,
+        replyableInputEntries.length,
+        leadReplyableEntry.native_request_kind ?? "user_input"
       )
     : null;
   const pendingInputKindsByThreadId = useMemo(() => {
@@ -375,6 +410,14 @@ export function OverviewScreen() {
       ).sort(compareThreadsForMobile),
     [filteredThreads]
   );
+  const inboxOtherEntries = useMemo(
+    () =>
+      [...(overview?.queue ?? [])]
+        .filter((entry) => entry.action_required && entry.kind !== "input")
+        .sort(compareQueueEntriesForMobile)
+        .slice(0, 3),
+    [overview]
+  );
   const visibleGroups = showAllProjects ? repoGroups : repoGroups.slice(0, 3);
   const hiddenGroupCount = Math.max(repoGroups.length - visibleGroups.length, 0);
   const matchingThreadCount = filteredThreads.length;
@@ -403,6 +446,47 @@ export function OverviewScreen() {
     } finally {
       setIsCreatingThread(false);
     }
+  }
+
+  function renderInboxEntry(entry: CodexQueueEntry) {
+    return (
+      <Link
+        key={entry.entry_id}
+        className={`codex-focus-item ${isDesktopRecoveryInputEntry(entry) ? "is-desktop-recovery" : ""}`}
+        href={buildActionHref(entry)}
+        onClick={() => setStoredLastActiveThread(entry.thread_id)}
+      >
+        <div className="codex-chat-row">
+          <div className="codex-chat-avatar">{getAvatarLabel(entry.title)}</div>
+          <div className="codex-thread-list-item__body">
+            <div className="codex-thread-list-item__head">
+              <div>
+                <strong>{entry.title}</strong>
+                <p className="codex-thread-list-item__preview">
+                  {describeQueuePreview(locale, entry)}
+                </p>
+              </div>
+              <div className="codex-thread-list-item__aside">
+                <span className="codex-thread-list-item__time">
+                  {formatDateTime(locale, entry.timestamp)}
+                </span>
+                <span className="codex-chat-count">1</span>
+              </div>
+            </div>
+            <div className="codex-focus-item__meta">
+              <span className="cue-pill">
+                {entry.kind === "input"
+                  ? describeNativeRequestQueueLabel(
+                      locale,
+                      entry.native_request_kind ?? "user_input"
+                    )
+                  : translateQueueKind(locale, entry.kind)}
+              </span>
+            </div>
+          </div>
+        </div>
+      </Link>
+    );
   }
 
   return (
@@ -496,19 +580,36 @@ export function OverviewScreen() {
             </section>
           ) : null}
 
-          {leadInputEntry && inputSummary ? (
+          {leadDesktopRecoveryEntry && desktopRecoverySummary ? (
             <section className="codex-status-strip tone-warning">
               <div className="codex-status-strip__copy">
-                <p className="section-label">{inputSummary.eyebrow}</p>
-                <strong>{inputSummary.title}</strong>
-                <p>{inputSummary.body}</p>
+                <p className="section-label">{desktopRecoverySummary.eyebrow}</p>
+                <strong>{desktopRecoverySummary.title}</strong>
+                <p>{desktopRecoverySummary.body}</p>
               </div>
               <Link
                 className="primary-button"
-                href={buildThreadPath(leadInputEntry.thread_id)}
-                onClick={() => setStoredLastActiveThread(leadInputEntry.thread_id)}
+                href={buildThreadPath(leadDesktopRecoveryEntry.thread_id)}
+                onClick={() => setStoredLastActiveThread(leadDesktopRecoveryEntry.thread_id)}
               >
-                {inputSummary.cta}
+                {desktopRecoverySummary.cta}
+              </Link>
+            </section>
+          ) : null}
+
+          {leadReplyableEntry && replyableSummary ? (
+            <section className="codex-status-strip">
+              <div className="codex-status-strip__copy">
+                <p className="section-label">{replyableSummary.eyebrow}</p>
+                <strong>{replyableSummary.title}</strong>
+                <p>{replyableSummary.body}</p>
+              </div>
+              <Link
+                className="secondary-button"
+                href={buildThreadPath(leadReplyableEntry.thread_id)}
+                onClick={() => setStoredLastActiveThread(leadReplyableEntry.thread_id)}
+              >
+                {replyableSummary.cta}
               </Link>
             </section>
           ) : null}
@@ -674,7 +775,7 @@ export function OverviewScreen() {
               <div>
                 <p className="section-label">{isZh ? "收件箱" : "Inbox"}</p>
                 <h2>
-                  {leadInputEntry &&
+                {leadInputEntry &&
                   isDesktopOrientedNativeRequest(leadInputEntry.native_request_kind)
                     ? localize(locale, { zh: "先打开这些", en: "Open these first" })
                     : localize(locale, { zh: "优先回复这些", en: "Reply to these first" })}
@@ -685,57 +786,67 @@ export function OverviewScreen() {
               </Link>
             </div>
 
-            {focusEntries.length > 0 ? (
-              <div className="codex-inbox-focus">
-                {focusEntries.map((entry) => (
-                  <Link
-                    key={entry.entry_id}
-                    className={`codex-focus-item ${
-                      entry.kind === "input" &&
-                      isDesktopRecoveryInputKind(entry.native_request_kind)
-                        ? "is-desktop-recovery"
-                        : ""
-                    }`}
-                    href={
-                      entry.patch_id
-                        ? buildThreadPatchPath(entry.thread_id, entry.patch_id)
-                        : buildThreadPath(entry.thread_id)
-                    }
-                    onClick={() => setStoredLastActiveThread(entry.thread_id)}
-                  >
-                    <div className="codex-chat-row">
-                      <div className="codex-chat-avatar">
-                        {getAvatarLabel(entry.title)}
-                      </div>
-                      <div className="codex-thread-list-item__body">
-                        <div className="codex-thread-list-item__head">
-                          <div>
-                            <strong>{entry.title}</strong>
-                            <p className="codex-thread-list-item__preview">
-                              {describeQueuePreview(locale, entry)}
-                            </p>
-                          </div>
-                          <div className="codex-thread-list-item__aside">
-                            <span className="codex-thread-list-item__time">
-                              {formatDateTime(locale, entry.timestamp)}
-                            </span>
-                            <span className="codex-chat-count">1</span>
-                          </div>
-                        </div>
-                        <div className="codex-focus-item__meta">
-                          <span className="cue-pill">
-                            {entry.kind === "input"
-                              ? describeNativeRequestQueueLabel(
-                                  locale,
-                                  entry.native_request_kind ?? "user_input"
-                                )
-                              : translateQueueKind(locale, entry.kind)}
-                          </span>
-                        </div>
+            {desktopRecoveryInputEntries.length > 0 ||
+            replyableInputEntries.length > 0 ||
+            inboxOtherEntries.length > 0 ? (
+              <div className="codex-page-stack">
+                {desktopRecoveryInputEntries.length > 0 ? (
+                  <div className="codex-page-stack">
+                    <div className="codex-page-section__header">
+                      <div>
+                        <p className="section-label">
+                          {localize(locale, { zh: "桌面恢复", en: "Desktop recovery" })}
+                        </p>
+                        <h2>
+                          {localize(locale, {
+                            zh: "这些聊天建议回桌面继续",
+                            en: "These chats usually continue on desktop"
+                          })}
+                        </h2>
                       </div>
                     </div>
-                  </Link>
-                ))}
+                    <div className="codex-inbox-focus">
+                      {desktopRecoveryInputEntries.slice(0, 2).map((entry) =>
+                        renderInboxEntry(entry)
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
+                {replyableInputEntries.length > 0 ? (
+                  <div className="codex-page-stack">
+                    <div className="codex-page-section__header">
+                      <div>
+                        <p className="section-label">
+                          {localize(locale, { zh: "手机可回", en: "Reply from phone" })}
+                        </p>
+                        <h2>
+                          {localize(locale, {
+                            zh: "这些聊天可以直接在手机完成",
+                            en: "You can finish these chats from the phone"
+                          })}
+                        </h2>
+                      </div>
+                    </div>
+                    <div className="codex-inbox-focus">
+                      {replyableInputEntries.slice(0, 2).map((entry) => renderInboxEntry(entry))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {inboxOtherEntries.length > 0 ? (
+                  <div className="codex-page-stack">
+                    <div className="codex-page-section__header">
+                      <div>
+                        <p className="section-label">{isZh ? "其它事项" : "Other items"}</p>
+                        <h2>{isZh ? "这些也要尽快处理" : "These still need attention"}</h2>
+                      </div>
+                    </div>
+                    <div className="codex-inbox-focus">
+                      {inboxOtherEntries.map((entry) => renderInboxEntry(entry))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <section className="codex-empty-state">

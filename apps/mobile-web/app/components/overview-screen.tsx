@@ -31,6 +31,7 @@ import {
   compareThreadsForMobile,
   getMobileThreadPriority
 } from "../lib/mobile-priority";
+import { describePendingInputSummary } from "../lib/native-input-copy";
 import { filterThreadsForQuery } from "../lib/thread-search";
 import { setStoredLastActiveThread } from "../lib/thread-storage";
 import { CodexShell } from "./codex-shell";
@@ -278,6 +279,17 @@ export function OverviewScreen() {
     [overview]
   );
   const topPriorityEntry = focusEntries[0] ?? null;
+  const pendingInputEntries = useMemo(
+    () =>
+      [...(overview?.queue ?? [])]
+        .filter((entry) => entry.action_required && entry.kind === "input")
+        .sort(compareQueueEntriesForMobile),
+    [overview]
+  );
+  const leadInputEntry = pendingInputEntries[0] ?? null;
+  const inputSummary = leadInputEntry
+    ? describePendingInputSummary(locale, pendingInputEntries.length)
+    : null;
   const repoGroups = useMemo(() => {
     const groups = new Map<
       string,
@@ -451,6 +463,23 @@ export function OverviewScreen() {
             </section>
           ) : null}
 
+          {leadInputEntry && inputSummary ? (
+            <section className="codex-status-strip tone-warning">
+              <div className="codex-status-strip__copy">
+                <p className="section-label">{isZh ? "正在等你回复" : "Waiting on you"}</p>
+                <strong>{inputSummary.title}</strong>
+                <p>{inputSummary.body}</p>
+              </div>
+              <Link
+                className="primary-button"
+                href={buildThreadPath(leadInputEntry.thread_id)}
+                onClick={() => setStoredLastActiveThread(leadInputEntry.thread_id)}
+              >
+                {inputSummary.cta}
+              </Link>
+            </section>
+          ) : null}
+
           <section className="codex-page-card codex-page-card--primary">
             <div className="codex-page-card__copy">
               <p className="section-label">{isZh ? "继续聊天" : "Jump back in"}</p>
@@ -471,10 +500,15 @@ export function OverviewScreen() {
               </strong>
               <p>
                 {topPriorityEntry
-                  ? localize(locale, {
-                      zh: `${translateQueueKind(locale, topPriorityEntry.kind)}需要优先处理。${topPriorityEntry.summary ?? topPriorityEntry.status}`,
-                      en: `${translateQueueKind(locale, topPriorityEntry.kind)} needs attention first. ${topPriorityEntry.summary ?? topPriorityEntry.status}`
-                    })
+                  ? topPriorityEntry.kind === "input"
+                    ? localize(locale, {
+                        zh: `这条聊天正卡在你的回复上。${topPriorityEntry.summary ?? topPriorityEntry.status}`,
+                        en: `This chat is paused on your reply. ${topPriorityEntry.summary ?? topPriorityEntry.status}`
+                      })
+                    : localize(locale, {
+                        zh: `${translateQueueKind(locale, topPriorityEntry.kind)}需要优先处理。${topPriorityEntry.summary ?? topPriorityEntry.status}`,
+                        en: `${translateQueueKind(locale, topPriorityEntry.kind)} needs attention first. ${topPriorityEntry.summary ?? topPriorityEntry.status}`
+                      })
                 : latestThread
                   ? localize(locale, {
                       zh: `最近活跃于 ${formatDateTime(locale, latestThread.updated_at)}，点进去就能接着聊。`,
@@ -508,7 +542,9 @@ export function OverviewScreen() {
                   }
                   onClick={() => setStoredLastActiveThread(topPriorityEntry.thread_id)}
                 >
-                  {isZh ? "马上处理" : "Open now"}
+                  {topPriorityEntry.kind === "input"
+                    ? localize(locale, { zh: "马上回复", en: "Reply now" })
+                    : localize(locale, { zh: "马上处理", en: "Open now" })}
                 </Link>
               ) : latestThread ? (
                 <Link

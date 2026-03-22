@@ -14,6 +14,7 @@ import {
   translateStatusText,
   useLocale
 } from "../lib/locale";
+import { describePendingInputSummary } from "../lib/native-input-copy";
 import {
   compareQueueEntriesForMobile,
   getMobileQueuePriority
@@ -156,6 +157,14 @@ export function QueueScreen() {
     }),
     [actionableQueue, queue]
   );
+  const inputEntries = useMemo(
+    () => actionableQueue.filter((entry) => entry.kind === "input"),
+    [actionableQueue]
+  );
+  const leadInputEntry = inputEntries[0] ?? null;
+  const inputSummary = leadInputEntry
+    ? describePendingInputSummary(locale, inputEntries.length)
+    : null;
   const groupedQueue = useMemo(() => {
     const threadsById = new Map(
       (overview?.threads ?? []).map((thread) => [thread.thread_id, thread])
@@ -232,6 +241,25 @@ export function QueueScreen() {
           </section>
         ) : null}
 
+        {leadInputEntry && inputSummary ? (
+          <section className="codex-status-strip tone-warning">
+            <div className="codex-status-strip__copy">
+              <p className="section-label">
+                {localize(locale, { zh: "先回复这里", en: "Reply first" })}
+              </p>
+              <strong>{inputSummary.title}</strong>
+              <p>{inputSummary.body}</p>
+            </div>
+            <Link
+              className="primary-button"
+              href={buildQueueHref(leadInputEntry)}
+              onClick={() => setStoredLastActiveThread(leadInputEntry.thread_id)}
+            >
+              {inputSummary.cta}
+            </Link>
+          </section>
+        ) : null}
+
         <section className="codex-status-strip">
           <div className="codex-status-strip__copy">
             <p className="section-label">{isZh ? "快速概览" : "At a glance"}</p>
@@ -239,9 +267,11 @@ export function QueueScreen() {
               {isZh ? `${actionableQueue.length} 项待处理` : `${actionableQueue.length} items waiting`}
             </strong>
             <p>
-              {isZh
-                ? "把它当成聊天里的未读提醒看就行，先点开要你确认和审查的那几条。"
-                : "Think of this like unread alerts: approvals and reviews come first, then failed follow-ups."}
+              {leadInputEntry && inputSummary
+                ? inputSummary.body
+                : isZh
+                  ? "把它当成聊天里的未读提醒看就行，先点开要你确认和审查的那几条。"
+                  : "Think of this like unread alerts: approvals and reviews come first, then failed follow-ups."}
             </p>
           </div>
           <div className="codex-queue-summary">

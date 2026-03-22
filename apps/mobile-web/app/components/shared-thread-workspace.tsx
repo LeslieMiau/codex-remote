@@ -72,6 +72,7 @@ import {
   translateThreadState,
   useLocale
 } from "../lib/locale";
+import { describeNativeRequestGateBody } from "../lib/native-input-copy";
 import {
   applyEventToLiveState,
   mergeMessages,
@@ -2628,14 +2629,17 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
               <strong>{leadNativeRequest.title ?? translateNativeRequestKind(locale, leadNativeRequest.kind)}</strong>
               <p>
                 {leadNativeRequest.prompt ??
-                  localize(locale, {
-                    zh: "先处理这条补充输入请求，Codex 才能继续执行当前运行。",
-                    en: "Resolve this input request before Codex can continue the current run."
-                  })}
+                  describeNativeRequestGateBody(
+                    locale,
+                    leadNativeRequest.kind,
+                    pendingNativeRequests.length
+                  )}
               </p>
             </div>
             <button className="secondary-button" onClick={openNativeRequestSheet} type="button">
-              {localize(locale, { zh: "处理输入", en: "Open input request" })}
+              {leadNativeRequest.kind === "user_input"
+                ? localize(locale, { zh: "处理输入", en: "Open input request" })
+                : localize(locale, { zh: "查看请求", en: "Open request" })}
             </button>
           </div>
         ) : leadApproval ? (

@@ -792,6 +792,15 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const composerShellRef = useRef<HTMLElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const previousSyncStateRef = useRef<CodexThread["sync_state"] | undefined>(
+    transcript?.thread.sync_state
+  );
+  const previousRemoteActionsBlockedRef = useRef(
+    Boolean(
+      transcript &&
+        (!transcript.thread.adapter_thread_ref || transcript.thread.sync_state === "sync_pending")
+    )
+  );
 
   useEffect(() => {
     setStoredLastActiveThread(threadId);
@@ -831,6 +840,12 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
     setThreadSwitcherError(null);
     lastSeenSeqRef.current = cachedTranscript?.thread.last_stream_seq ?? 0;
     transcriptRef.current = cachedTranscript;
+    previousSyncStateRef.current = cachedTranscript?.thread.sync_state;
+    previousRemoteActionsBlockedRef.current = Boolean(
+      cachedTranscript &&
+        (!cachedTranscript.thread.adapter_thread_ref ||
+          cachedTranscript.thread.sync_state === "sync_pending")
+    );
   }, [threadId]);
 
   useEffect(() => {
@@ -1242,6 +1257,34 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
               title: localize(locale, { zh: "准备继续这条聊天", en: "Ready to continue this chat" }),
               tone: "success" as const
             };
+
+  useEffect(() => {
+    if (!transcript) {
+      previousSyncStateRef.current = undefined;
+      previousRemoteActionsBlockedRef.current = false;
+      return;
+    }
+
+    const previousSyncState = previousSyncStateRef.current;
+    const previousRemoteActionsBlocked = previousRemoteActionsBlockedRef.current;
+
+    if (
+      previousRemoteActionsBlocked &&
+      !remoteThreadActionsBlocked &&
+      previousSyncState === "sync_pending" &&
+      transcript.thread.sync_state === "native_confirmed"
+    ) {
+      setToastMessage(
+        localize(locale, {
+          zh: "原生同步已完成，现在可以继续归档、分支、Review 和回滚操作了。",
+          en: "Native sync finished. Archive, fork, review, and rollback actions are available again."
+        })
+      );
+    }
+
+    previousSyncStateRef.current = transcript.thread.sync_state;
+    previousRemoteActionsBlockedRef.current = remoteThreadActionsBlocked;
+  }, [locale, remoteThreadActionsBlocked, transcript]);
 
   useEffect(() => {
     if (showJumpToLatest) {
@@ -2489,8 +2532,8 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
               {remoteThreadActionsBlocked ? (
                 <p className="codex-inline-note">
                   {localize(locale, {
-                    zh: "这条聊天还在等待进入原生 Codex 时间线，归档、分支、review 和回滚等操作会在同步完成后开放。",
-                    en: "This chat is still entering the native Codex timeline. Archive, fork, review, and rollback open up after sync finishes."
+                    zh: "这条聊天还在等待进入原生 Codex 时间线，归档、分支、review 和回滚等操作会在同步完成后自动开放。",
+                    en: "This chat is still entering the native Codex timeline. Archive, fork, review, and rollback unlock automatically after sync finishes."
                   })}
                 </p>
               ) : null}

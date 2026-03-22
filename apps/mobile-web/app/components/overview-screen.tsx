@@ -32,6 +32,11 @@ import {
   getMobileThreadPriority
 } from "../lib/mobile-priority";
 import {
+  getStoredInputFocusFilter,
+  setStoredInputFocusFilter,
+  type InputFocusFilter
+} from "../lib/input-focus-storage";
+import {
   describeNativeRequestActionLabel,
   describeNativeRequestAttentionLabel,
   describeNativeRequestQueueLabel,
@@ -47,8 +52,6 @@ import { NewThreadSheet } from "./new-thread-sheet";
 import { SkeletonCard } from "./skeleton";
 
 const POLL_INTERVAL_MS = 2_000;
-
-type InputFocusFilter = "all" | "desktop" | "replyable";
 
 function getAvatarLabel(value: string) {
   return Array.from(value.trim())[0]?.toUpperCase() ?? "#";
@@ -243,7 +246,9 @@ export function OverviewScreen() {
   const [showAllProjects, setShowAllProjects] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [threadQuery, setThreadQuery] = useState("");
-  const [inputFocusFilter, setInputFocusFilter] = useState<InputFocusFilter>("all");
+  const [inputFocusFilter, setInputFocusFilter] = useState<InputFocusFilter>(() =>
+    getStoredInputFocusFilter()
+  );
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
   const [lastSuccessfulSyncAt, setLastSuccessfulSyncAt] = useState<string | null>(null);
   const inFlightRef = useRef(false);
@@ -311,6 +316,10 @@ export function OverviewScreen() {
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [showArchived]);
+
+  useEffect(() => {
+    setStoredInputFocusFilter(inputFocusFilter);
+  }, [inputFocusFilter]);
 
   const runningCount =
     overview?.threads.filter((thread) => thread.state === "running").length ?? 0;

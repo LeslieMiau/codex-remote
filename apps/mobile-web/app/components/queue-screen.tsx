@@ -8,6 +8,11 @@ import { getCachedOverview, setCachedOverview } from "../lib/client-cache";
 import { buildThreadPatchPath, buildThreadPath } from "../lib/codex-paths";
 import { getCodexOverview } from "../lib/gateway-client";
 import {
+  getStoredInputFocusFilter,
+  setStoredInputFocusFilter,
+  type InputFocusFilter
+} from "../lib/input-focus-storage";
+import {
   formatDateTime,
   localize,
   translateQueueKind,
@@ -29,8 +34,6 @@ import { setStoredLastActiveThread } from "../lib/thread-storage";
 import { CodexShell } from "./codex-shell";
 
 const POLL_INTERVAL_MS = 2_500;
-
-type InputFocusFilter = "all" | "desktop" | "replyable";
 
 function buildQueueHref(entry: CodexQueueEntry) {
   if (entry.patch_id) {
@@ -131,7 +134,9 @@ export function QueueScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(!getCachedOverview());
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [inputFocusFilter, setInputFocusFilter] = useState<InputFocusFilter>("all");
+  const [inputFocusFilter, setInputFocusFilter] = useState<InputFocusFilter>(() =>
+    getStoredInputFocusFilter()
+  );
   const inFlightRef = useRef(false);
 
   useEffect(() => {
@@ -193,6 +198,10 @@ export function QueueScreen() {
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, []);
+
+  useEffect(() => {
+    setStoredInputFocusFilter(inputFocusFilter);
+  }, [inputFocusFilter]);
 
   const queue = overview?.queue ?? [];
   const actionableQueue = useMemo(

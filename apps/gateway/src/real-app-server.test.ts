@@ -7,12 +7,19 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type {
   CodexDiagnosticsSummaryResponse,
-  CodexSharedSettingsResponse
+  CodexSharedSettingsResponse,
+  TurnRecord
 } from "@codex-remote/protocol";
 
 import { createGatewayServer, type GatewayRuntime } from "./server";
 
 const DEFAULT_APP_SERVER_ARGS = ["app-server", "--listen", "stdio://"] as const;
+const LIVE_TURN_STATES = new Set<TurnRecord["state"]>([
+  "started",
+  "streaming",
+  "resumed",
+  "waiting_approval"
+]);
 const runtimes: GatewayRuntime[] = [];
 const cleanupRoots = new Set<string>();
 
@@ -43,6 +50,7 @@ function realAppServerTestConfig() {
     args: parseCommandArgs(process.env.RUN_REAL_APP_SERVER_ARGS),
     command: process.env.RUN_REAL_APP_SERVER_COMMAND ?? "codex",
     enabled: process.env.RUN_REAL_APP_SERVER_TESTS === "1",
+    liveFollowUpEnabled: process.env.RUN_REAL_APP_SERVER_LIVE_FOLLOW_UP_TESTS === "1",
     timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 120_000
   };
 }
@@ -88,6 +96,17 @@ async function waitFor<T>(
   }
 
   return await read();
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string) {
+  return await Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`Timed out waiting for ${label}`));
+      }, timeoutMs);
+    })
+  ]);
 }
 
 async function createRuntime() {
@@ -143,6 +162,124 @@ async function waitForSharedThreadControlReady(
   );
 }
 
+async function createReadySharedThread(input: {
+  repoRoot: string;
+  requestId: string;
+  runtime: GatewayRuntime;
+  timeoutMs: number;
+}) {
+  const createShared = await input.runtime.app.inject({
+    method: "POST",
+    payload: {
+      actor_id: "smoke",
+      repo_root: input.repoRoot,
+      request_id: input.requestId
+    },
+    url: "/threads/shared"
+  });
+  expect(createShared.statusCode).toBe(200);
+
+  const threadId = createShared.json().thread.thread_id as string;
+  const readyThread = await waitForSharedThreadControlReady(
+    input.runtime,
+    threadId,
+    input.timeoutMs
+  );
+  expect(readyThread?.thread_id).toBe(threadId);
+  expect(readyThread?.adapter_thread_ref).toBeTruthy();
+
+  return {
+    thread: readyThread!,
+    threadId
+  };
+}
+
+async function waitForLiveTurn(input: {
+  runtime: GatewayRuntime;
+  threadId: string;
+  turnId: string;
+  timeoutMs: number;
+}) {
+  const result = await waitFor(
+    async () => ({
+      thread: await input.runtime.bridge.getThread(input.threadId),
+      turn: input.runtime.store.getTurn(input.turnId)
+    }),
+    (value) =>
+      Boolean(
+        value.thread?.adapter_thread_ref &&
+          value.turn &&
+          LIVE_TURN_STATES.has(value.turn.state)
+      ),
+    input.timeoutMs
+  );
+
+  return result.thread?.adapter_thread_ref && result.turn
+    ? {
+        thread: result.thread,
+        turn: result.turn
+      }
+    : null;
+}
+
+async function cleanupLiveTurn(input: {
+  runtime: GatewayRuntime;
+  turnId: string;
+  timeoutMs: number;
+}) {
+  const currentTurn = input.runtime.store.getTurn(input.turnId);
+  if (!currentTurn) {
+    return;
+  }
+
+  if (
+    currentTurn.state === "completed" ||
+    currentTurn.state === "failed" ||
+    currentTurn.state === "interrupted"
+  ) {
+    return;
+  }
+
+  const interrupt = await withTimeout(
+    input.runtime.app.inject({
+      method: "POST",
+      payload: {
+        actor_id: "smoke",
+        request_id: `real-smoke-interrupt-${input.turnId}`
+      },
+      url: `/runs/${encodeURIComponent(input.turnId)}/interrupt`
+    }),
+    Math.min(input.timeoutMs, 15_000),
+    `interrupting run ${input.turnId}`
+  );
+  expect(interrupt.statusCode).toBe(200);
+
+  await waitFor(
+    async () => input.runtime.store.getTurn(input.turnId),
+    (turn) =>
+      turn?.state === "completed" ||
+      turn?.state === "failed" ||
+      turn?.state === "interrupted",
+    Math.min(input.timeoutMs, 15_000)
+  );
+
+  const hasExecution = await waitFor(
+    async () => input.runtime.manager.hasActiveExecution(input.turnId),
+    (active) => !active,
+    Math.min(input.timeoutMs, 15_000)
+  );
+  expect(hasExecution).toBe(false);
+}
+
+async function closeRuntime(runtime: GatewayRuntime, timeoutMs: number) {
+  const index = runtimes.indexOf(runtime);
+  if (index >= 0) {
+    runtimes.splice(index, 1);
+  }
+
+  await withTimeout(runtime.app.close(), Math.min(timeoutMs, 15_000), "closing gateway runtime");
+}
+
 afterEach(async () => {
   while (runtimes.length > 0) {
     const runtime = runtimes.pop();
@@ -164,11 +301,13 @@ describe("real-app-server smoke", () => {
     expect({
       command: config.command,
       enabled: config.enabled,
+      liveFollowUpEnabled: config.liveFollowUpEnabled,
       hint:
         "RUN_REAL_APP_SERVER_TESTS=1 pnpm --filter @codex-remote/gateway test -- src/real-app-server.test.ts"
     }).toMatchObject({
       command: expect.any(String),
       enabled: expect.any(Boolean),
+      liveFollowUpEnabled: expect.any(Boolean),
       hint: expect.stringContaining("RUN_REAL_APP_SERVER_TESTS=1")
     });
   });
@@ -426,4 +565,99 @@ describe("real-app-server smoke", () => {
     },
     config.timeoutMs
   );
+
+  if (config.liveFollowUpEnabled) {
+    it(
+      "accepts a live follow-up on a materialized shared turn",
+      async () => {
+        const promptStrategies = [
+          {
+            label: "approval-gated",
+            prompt:
+              "Create a file named steer-smoke.txt with the text hello, then reply with DONE."
+          },
+          {
+            label: "long-output",
+            prompt:
+              "Write the integers from 1 to 4000, one per line, and do not use tools."
+          }
+        ] as const;
+
+        let matchedStrategy: (typeof promptStrategies)[number]["label"] | null = null;
+
+        for (const strategy of promptStrategies) {
+          const { runtime, repoRoot } = await createRuntime();
+          try {
+            const { threadId } = await createReadySharedThread({
+              repoRoot,
+              requestId: `real-smoke-live-follow-up-${strategy.label}`,
+              runtime,
+              timeoutMs: config.timeoutMs
+            });
+
+            const encodedThreadId = encodeURIComponent(threadId);
+            const startRun = await runtime.app.inject({
+              method: "POST",
+              payload: {
+                actor_id: "smoke",
+                request_id: `real-smoke-live-run-${strategy.label}`,
+                prompt: strategy.prompt
+              },
+              url: `/threads/${encodedThreadId}/runs`
+            });
+            expect(startRun.statusCode).toBe(200);
+
+            const turnId = startRun.json().turn.turn_id as string;
+            const liveTurn = await waitForLiveTurn({
+              runtime,
+              threadId,
+              turnId,
+              timeoutMs: Math.min(config.timeoutMs, 10_000)
+            });
+            if (!liveTurn) {
+              await cleanupLiveTurn({
+                runtime,
+                turnId,
+                timeoutMs: config.timeoutMs
+              });
+              continue;
+            }
+
+            const followUp = await withTimeout(
+              runtime.app.inject({
+                method: "POST",
+                payload: {
+                  actor_id: "smoke",
+                  request_id: `real-smoke-live-follow-up-send-${strategy.label}`,
+                  prompt: "Stop the previous plan and reply with exactly FOLLOW_UP_OK."
+                },
+                url: `/runs/${encodeURIComponent(turnId)}/follow-ups`
+              }),
+              Math.min(config.timeoutMs, 15_000),
+              `sending live follow-up for ${strategy.label}`
+            );
+            expect(followUp.statusCode).toBe(200);
+            expect(followUp.json()).toMatchObject({
+              turn: {
+                turn_id: turnId
+              }
+            });
+
+            await cleanupLiveTurn({
+              runtime,
+              turnId,
+              timeoutMs: config.timeoutMs
+            });
+            matchedStrategy = strategy.label;
+            break;
+          } finally {
+            await closeRuntime(runtime, config.timeoutMs);
+          }
+        }
+
+        expect(matchedStrategy).not.toBeNull();
+      },
+      config.timeoutMs
+    );
+  }
 });

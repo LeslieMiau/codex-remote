@@ -15,6 +15,7 @@ import {
   useLocale
 } from "../lib/locale";
 import {
+  describeNativeRequestAttentionLabel,
   describeNativeRequestQueueLabel,
   describePendingInputSummary,
   describeQueueInputPreview
@@ -302,7 +303,13 @@ export function QueueScreen() {
               {focusEntries.map((entry) => (
                 <Link
                   key={entry.entry_id}
-                  className="codex-focus-item"
+                  className={`codex-focus-item ${
+                    entry.kind === "input" &&
+                    (entry.native_request_kind === "dynamic_tool" ||
+                      entry.native_request_kind === "auth_refresh")
+                      ? "is-desktop-recovery"
+                      : ""
+                  }`}
                   href={buildQueueHref(entry)}
                   onClick={() => setStoredLastActiveThread(entry.thread_id)}
                 >
@@ -332,6 +339,21 @@ export function QueueScreen() {
                               )
                             : translateQueueKind(locale, entry.kind)}
                         </span>
+                        {entry.kind === "input" ? (
+                          <span
+                            className={`status-dot ${
+                              entry.native_request_kind === "dynamic_tool" ||
+                              entry.native_request_kind === "auth_refresh"
+                                ? "tone-warning"
+                                : ""
+                            }`}
+                          >
+                            {describeNativeRequestAttentionLabel(
+                              locale,
+                              entry.native_request_kind ?? "user_input"
+                            )}
+                          </span>
+                        ) : null}
                         <span className="status-dot">
                           {translateStatusText(locale, entry.status)}
                         </span>
@@ -387,7 +409,13 @@ export function QueueScreen() {
                   {group.entries.map((entry) => (
                     <Link
                       key={entry.entry_id}
-                      className="codex-queue-card"
+                      className={`codex-queue-card ${
+                        entry.kind === "input" &&
+                        (entry.native_request_kind === "dynamic_tool" ||
+                          entry.native_request_kind === "auth_refresh")
+                          ? "is-desktop-recovery"
+                          : ""
+                      }`}
                       href={buildQueueHref(entry)}
                       onClick={() => setStoredLastActiveThread(entry.thread_id)}
                     >
@@ -417,6 +445,21 @@ export function QueueScreen() {
                                   )
                                 : translateQueueKind(locale, entry.kind)}
                             </span>
+                            {entry.kind === "input" ? (
+                              <span
+                                className={`status-dot ${
+                                  entry.native_request_kind === "dynamic_tool" ||
+                                  entry.native_request_kind === "auth_refresh"
+                                    ? "tone-warning"
+                                    : ""
+                                }`}
+                              >
+                                {describeNativeRequestAttentionLabel(
+                                  locale,
+                                  entry.native_request_kind ?? "user_input"
+                                )}
+                              </span>
+                            ) : null}
                             <span className="status-dot">
                               {translateStatusText(locale, entry.status)}
                             </span>

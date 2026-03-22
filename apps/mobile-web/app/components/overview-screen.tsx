@@ -33,6 +33,7 @@ import {
 } from "../lib/mobile-priority";
 import {
   describeNativeRequestActionLabel,
+  describeNativeRequestAttentionLabel,
   describeNativeRequestQueueLabel,
   describePendingInputSummary,
   describeQueueInputPreview,
@@ -179,6 +180,10 @@ function describeQueuePreview(locale: "zh" | "en", entry: CodexQueueEntry) {
   }
 }
 
+function isDesktopRecoveryInputKind(kind: CodexQueueEntry["native_request_kind"]) {
+  return isDesktopOrientedNativeRequest(kind);
+}
+
 export function OverviewScreen() {
   const router = useRouter();
   const { locale } = useLocale();
@@ -288,6 +293,10 @@ export function OverviewScreen() {
     [overview]
   );
   const topPriorityEntry = focusEntries[0] ?? null;
+  const topPriorityInputKind =
+    topPriorityEntry?.kind === "input"
+      ? topPriorityEntry.native_request_kind ?? "user_input"
+      : undefined;
   const pendingInputEntries = useMemo(
     () =>
       [...(overview?.queue ?? [])]
@@ -506,7 +515,13 @@ export function OverviewScreen() {
 
           <section className="codex-page-card codex-page-card--primary">
             <div className="codex-page-card__copy">
-              <p className="section-label">{isZh ? "继续聊天" : "Jump back in"}</p>
+              <p className="section-label">
+                {topPriorityInputKind
+                  ? describeNativeRequestAttentionLabel(locale, topPriorityInputKind)
+                  : isZh
+                    ? "继续聊天"
+                    : "Jump back in"}
+              </p>
               <strong>
                 {isLoading && !overview
                   ? localize(locale, {
@@ -542,6 +557,15 @@ export function OverviewScreen() {
               </p>
             </div>
             <div className="codex-page-card__meta">
+              {topPriorityInputKind ? (
+                <span
+                  className={`status-dot ${
+                    isDesktopRecoveryInputKind(topPriorityInputKind) ? "tone-warning" : ""
+                  }`}
+                >
+                  {describeNativeRequestQueueLabel(locale, topPriorityInputKind)}
+                </span>
+              ) : null}
               <span className="status-dot">
                 {isZh ? `${runningCount} 条进行中` : `${runningCount} active`}
               </span>
@@ -666,7 +690,12 @@ export function OverviewScreen() {
                 {focusEntries.map((entry) => (
                   <Link
                     key={entry.entry_id}
-                    className="codex-focus-item"
+                    className={`codex-focus-item ${
+                      entry.kind === "input" &&
+                      isDesktopRecoveryInputKind(entry.native_request_kind)
+                        ? "is-desktop-recovery"
+                        : ""
+                    }`}
                     href={
                       entry.patch_id
                         ? buildThreadPatchPath(entry.thread_id, entry.patch_id)
@@ -731,9 +760,18 @@ export function OverviewScreen() {
               </div>
               <div className="codex-list-stack">
                 {priorityThreads.slice(0, 4).map((thread) => (
+                  (() => {
+                    const pendingInputKind = pendingInputKindsByThreadId.get(thread.thread_id);
+                    const isDesktopRecovery = isDesktopRecoveryInputKind(pendingInputKind);
+
+                    return (
                   <Link
                     key={thread.thread_id}
                     className={`codex-thread-list-item ${
+                      isDesktopRecovery
+                        ? "is-desktop-recovery"
+                        : ""
+                    } ${
                       thread.pending_approvals > 0 ||
                       thread.pending_patches > 0 ||
                       thread.pending_native_requests > 0 ||
@@ -759,7 +797,7 @@ export function OverviewScreen() {
                               {describeThreadPreview(
                                 locale,
                                 thread,
-                                pendingInputKindsByThreadId.get(thread.thread_id)
+                                pendingInputKind
                               )}
                             </p>
                           </div>
@@ -776,6 +814,15 @@ export function OverviewScreen() {
                         </div>
                         <div className="codex-thread-list-item__meta">
                           <span className="cue-pill">{thread.project_label}</span>
+                          {pendingInputKind ? (
+                            <span
+                              className={`status-dot ${
+                                isDesktopRecovery ? "tone-warning" : ""
+                              }`}
+                            >
+                              {describeNativeRequestAttentionLabel(locale, pendingInputKind)}
+                            </span>
+                          ) : null}
                           <span className="status-dot">{getRepoTail(thread.repo_root)}</span>
                           <span className="status-dot">
                             {translateThreadState(locale, thread.state)}
@@ -784,6 +831,8 @@ export function OverviewScreen() {
                       </div>
                     </div>
                   </Link>
+                    );
+                  })()
                 ))}
               </div>
             </section>
@@ -837,9 +886,21 @@ export function OverviewScreen() {
 
                     <div className="codex-list-stack">
                       {visibleThreads.map((thread) => (
+                        (() => {
+                          const pendingInputKind = pendingInputKindsByThreadId.get(
+                            thread.thread_id
+                          );
+                          const isDesktopRecovery =
+                            isDesktopRecoveryInputKind(pendingInputKind);
+
+                          return (
                         <Link
                           key={thread.thread_id}
                           className={`codex-thread-list-item ${
+                            isDesktopRecovery
+                              ? "is-desktop-recovery"
+                              : ""
+                          } ${
                             thread.pending_approvals > 0 ||
                             thread.pending_patches > 0 ||
                             thread.pending_native_requests > 0 ||
@@ -865,7 +926,7 @@ export function OverviewScreen() {
                                     {describeThreadPreview(
                                       locale,
                                       thread,
-                                      pendingInputKindsByThreadId.get(thread.thread_id)
+                                      pendingInputKind
                                     )}
                                   </p>
                                 </div>
@@ -882,6 +943,18 @@ export function OverviewScreen() {
                               </div>
                               <div className="codex-thread-list-item__meta">
                                 <span className="cue-pill">{thread.project_label}</span>
+                                {pendingInputKind ? (
+                                  <span
+                                    className={`status-dot ${
+                                      isDesktopRecovery ? "tone-warning" : ""
+                                    }`}
+                                  >
+                                    {describeNativeRequestAttentionLabel(
+                                      locale,
+                                      pendingInputKind
+                                    )}
+                                  </span>
+                                ) : null}
                                 <span className="status-dot">
                                   {getRepoTail(thread.repo_root)}
                                 </span>
@@ -892,6 +965,8 @@ export function OverviewScreen() {
                             </div>
                           </div>
                         </Link>
+                          );
+                        })()
                       ))}
                     </div>
 

@@ -137,6 +137,30 @@ export function describeNativeRequestQueueLabel(
   });
 }
 
+export function describeNativeRequestAttentionLabel(
+  locale: Locale,
+  kind: NativeRequestKind = "user_input"
+) {
+  if (kind === "dynamic_tool") {
+    return localize(locale, {
+      zh: "桌面恢复",
+      en: "Desktop recovery"
+    });
+  }
+
+  if (kind === "auth_refresh") {
+    return localize(locale, {
+      zh: "桌面认证",
+      en: "Desktop auth"
+    });
+  }
+
+  return localize(locale, {
+    zh: "等待回复",
+    en: "Reply needed"
+  });
+}
+
 export function describeThreadPendingInputPreview(
   locale: Locale,
   kind: NativeRequestKind | undefined

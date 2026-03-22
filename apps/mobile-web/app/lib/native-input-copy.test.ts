@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   describeNativeRequestActionLabel,
+  describeNativeRequestAttentionLabel,
   describeNativeRequestQueueLabel,
   describeNativeRequestRecoveryNotice,
   describeNativeRequestTaskDetail,
@@ -72,6 +73,10 @@ describe("native request recovery helpers", () => {
     ).toContain("paused on a dynamic tool step");
     expect(describeNativeRequestQueueLabel("zh", "auth_refresh")).toBe("桌面认证");
     expect(describeNativeRequestQueueLabel("en", "user_input")).toBe("Reply here");
+    expect(describeNativeRequestAttentionLabel("en", "dynamic_tool")).toBe(
+      "Desktop recovery"
+    );
+    expect(describeNativeRequestAttentionLabel("zh", "user_input")).toBe("等待回复");
   });
 
   it("updates thread preview copy for desktop-oriented requests", () => {

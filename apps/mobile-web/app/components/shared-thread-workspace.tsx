@@ -74,9 +74,12 @@ import {
 } from "../lib/locale";
 import {
   describeNativeRequestActionLabel,
+  describeNativeRequestAttentionLabel,
   describeNativeRequestGateBody,
   describeNativeRequestRecoveryNotice,
-  describeNativeRequestTaskDetail
+  describeNativeRequestTaskDetail,
+  describeNativeRequestQueueLabel,
+  isDesktopOrientedNativeRequest
 } from "../lib/native-input-copy";
 import {
   applyEventToLiveState,
@@ -1230,7 +1233,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
             leadNativeRequest.kind,
             leadNativeRequest.prompt
           ),
-        label: localize(locale, { zh: "当前状态", en: "Current activity" }),
+        label: describeNativeRequestAttentionLabel(locale, leadNativeRequest.kind),
         title:
           leadNativeRequest.title ??
           translateNativeRequestKind(locale, leadNativeRequest.kind),
@@ -2030,6 +2033,17 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
 
         <section className="codex-page-section">
           <div className="codex-thread-context">
+            {leadNativeRequest ? (
+              <span
+                className={`status-dot ${
+                  isDesktopOrientedNativeRequest(leadNativeRequest.kind)
+                    ? "tone-warning"
+                    : ""
+                }`}
+              >
+                {describeNativeRequestQueueLabel(locale, leadNativeRequest.kind)}
+              </span>
+            ) : null}
             <span className="status-dot">
               {localize(locale, { zh: "状态", en: "Status" })}{" "}
               {transcript
@@ -2060,8 +2074,16 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
         </section>
 
         <section className="codex-status-area">
-          <article className={`codex-task-card tone-${activeTask.tone}`}>
+          <article
+            className={`codex-task-card tone-${activeTask.tone} ${
+              leadNativeRequest &&
+              isDesktopOrientedNativeRequest(leadNativeRequest.kind)
+                ? "is-desktop-recovery"
+                : ""
+            }`}
+          >
             <div className="codex-task-card__copy">
+              <p className="section-label">{activeTask.label}</p>
               <strong>{activeTask.title}</strong>
               <p>{activeTask.detail}</p>
             </div>

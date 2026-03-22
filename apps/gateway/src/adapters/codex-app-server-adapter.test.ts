@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
+import type { TurnInputItem } from "@codex-remote/protocol";
 
 import { CodexAttachmentStore } from "../runtime/codex-attachment-store";
 import type { PatchDecision } from "./types";
@@ -28,10 +29,7 @@ async function runAdapterTurn(input: {
   prompt?: string;
   turnInput?: {
     prompt: string;
-    input_items?: Array<{
-      type: string;
-      [key: string]: unknown;
-    }>;
+    input_items?: TurnInputItem[];
   };
   turnId: string;
 }) {

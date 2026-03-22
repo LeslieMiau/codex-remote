@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { openSqliteDatabase } from "./lib/sqlite";
 import { createGatewayServer, type GatewayRuntime } from "./server";
+import { CodexAttachmentStore } from "./runtime/codex-attachment-store";
 
 const runtimes: GatewayRuntime[] = [];
 const cleanupRoots = new Set<string>();
@@ -539,6 +540,138 @@ describe("gateway server", () => {
       (turn) => turn?.state === "interrupted"
     );
     expect(runtime.store.getThread(threadId)?.active_turn_id).toBeNull();
+  });
+
+  it("forwards structured inputs through live follow-ups on shared runs", async () => {
+    const { bridgeLogPath, codexHome, repoRoot, runtime } = await createRuntime();
+
+    const createShared = await runtime.app.inject({
+      method: "POST",
+      url: "/threads/shared",
+      payload: {
+        actor_id: "phone",
+        request_id: "follow-up-live-create",
+        repo_root: repoRoot
+      }
+    });
+    expect(createShared.statusCode).toBe(200);
+
+    const threadId = createShared.json().thread.thread_id as string;
+    const startRun = await runtime.app.inject({
+      method: "POST",
+      url: `/threads/${threadId}/runs`,
+      payload: {
+        actor_id: "phone",
+        request_id: "follow-up-live-run",
+        prompt: "[fixture:interrupt] Hold the run open for live follow-up."
+      }
+    });
+    expect(startRun.statusCode).toBe(200);
+
+    const turnId = startRun.json().turn.turn_id as string;
+    await waitFor(
+      () => runtime.store.getTurn(turnId),
+      (turn) =>
+        turn?.state === "started" ||
+        turn?.state === "streaming" ||
+        turn?.state === "resumed"
+    );
+
+    const attachmentStore = new CodexAttachmentStore({
+      codexHome
+    });
+    const attachment = await attachmentStore.saveImage({
+      threadId,
+      fileName: "phone.png",
+      contentType: "image/png",
+      bytes: new Uint8Array([137, 80, 78, 71])
+    });
+
+    const followUp = await runtime.app.inject({
+      method: "POST",
+      url: `/runs/${turnId}/follow-ups`,
+      payload: {
+        actor_id: "phone",
+        request_id: "follow-up-live-steer",
+        prompt: "Use the queued skill and image inputs while this run is still live.",
+        input_items: [
+          {
+            type: "skill",
+            name: "checks",
+            path: "/skills/checks/SKILL.md"
+          },
+          {
+            type: "image_attachment",
+            attachment_id: attachment.attachment_id,
+            file_name: attachment.file_name
+          }
+        ]
+      }
+    });
+    expect(followUp.statusCode).toBe(200);
+    expect(followUp.json().turn.turn_id).toBe(turnId);
+
+    const log = await fs.readFile(bridgeLogPath, "utf8");
+    expect(log).toContain("request:thread/resume");
+    expect(log).toContain("request:turn/steer");
+    expect(log).toContain("turn-steer-input:");
+    expect(log).toContain('"text":"Use the queued skill and image inputs while this run is still live."');
+    expect(log).toContain('"type":"skill"');
+    expect(log).toContain('"name":"checks"');
+    expect(log).toContain('"type":"localImage"');
+  });
+
+  it("rejects plan-mode live follow-ups before steering the active run", async () => {
+    const { bridgeLogPath, repoRoot, runtime } = await createRuntime();
+
+    const createShared = await runtime.app.inject({
+      method: "POST",
+      url: "/threads/shared",
+      payload: {
+        actor_id: "phone",
+        request_id: "follow-up-plan-create",
+        repo_root: repoRoot
+      }
+    });
+    expect(createShared.statusCode).toBe(200);
+
+    const threadId = createShared.json().thread.thread_id as string;
+    const startRun = await runtime.app.inject({
+      method: "POST",
+      url: `/threads/${threadId}/runs`,
+      payload: {
+        actor_id: "phone",
+        request_id: "follow-up-plan-run",
+        prompt: "[fixture:interrupt] Hold the run open for plan-mode follow-up validation."
+      }
+    });
+    expect(startRun.statusCode).toBe(200);
+
+    const turnId = startRun.json().turn.turn_id as string;
+    await waitFor(
+      () => runtime.store.getTurn(turnId),
+      (turn) =>
+        turn?.state === "started" ||
+        turn?.state === "streaming" ||
+        turn?.state === "resumed"
+    );
+
+    const followUp = await runtime.app.inject({
+      method: "POST",
+      url: `/runs/${turnId}/follow-ups`,
+      payload: {
+        actor_id: "phone",
+        request_id: "follow-up-plan-steer",
+        prompt: "This should require a fresh turn.",
+        collaboration_mode: "plan"
+      }
+    });
+    expect(followUp.statusCode).toBe(409);
+    expect(followUp.json()).toMatchObject({
+      error: "collaboration_mode_requires_new_turn"
+    });
+
+    await expect(fs.readFile(bridgeLogPath, "utf8")).rejects.toThrow();
   });
 
   it("marks a shared native thread as updated after phone-side rollback", async () => {

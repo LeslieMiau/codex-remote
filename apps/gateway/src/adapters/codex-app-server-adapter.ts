@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
 import type { ApprovalKind, PatchChange, PatchFileSummary } from "@codex-remote/protocol";
 
+import { buildAppServerPromptInputs } from "../lib/app-server-inputs";
 import {
   JsonLineFramer,
   encodeJsonLineMessage
@@ -348,49 +349,11 @@ async function buildPromptInputs(
   context: AdapterTurnContext,
   attachmentStore?: CodexAttachmentStore
 ) {
-  const prompt = context.turnInput?.prompt ?? context.turn.prompt;
-  const inputItems = context.turnInput?.input_items ?? [];
-  const inputs: Array<Record<string, unknown>> = [
-    {
-      type: "text",
-      text: prompt,
-      text_elements: []
-    }
-  ];
-
-  for (const item of inputItems) {
-    if (item.type === "skill") {
-      inputs.push({
-        type: "skill",
-        name: item.name,
-        path: item.path
-      });
-      continue;
-    }
-
-    if (item.type === "image_attachment") {
-      const attachmentId =
-        typeof item.attachment_id === "string" ? item.attachment_id : "";
-      if (!attachmentId) {
-        throw new Error("Invalid image attachment.");
-      }
-      if (!attachmentStore) {
-        throw new Error("Image attachments are unavailable on this host.");
-      }
-
-      const attachment = await attachmentStore.resolveImageAttachment(attachmentId);
-      if (!attachment) {
-        throw new Error(`Image attachment is unavailable: ${attachmentId}`);
-      }
-
-      inputs.push({
-        type: "localImage",
-        path: attachment.local_path
-      });
-    }
-  }
-
-  return inputs;
+  return buildAppServerPromptInputs({
+    prompt: context.turnInput?.prompt ?? context.turn.prompt,
+    inputItems: context.turnInput?.input_items,
+    attachmentStore
+  });
 }
 
 function extractCollaborationMode(context: AdapterTurnContext) {

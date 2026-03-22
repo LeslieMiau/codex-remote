@@ -6,16 +6,14 @@ import type {
   ProjectSummary,
   TestRunStatus,
   ThreadSnapshot,
+  TurnInputItem,
   TurnProgressChannel,
   TurnRecord
 } from "@codex-remote/protocol";
 
 export interface AdapterTurnInput {
   prompt: string;
-  input_items?: Array<{
-    type: string;
-    [key: string]: unknown;
-  }>;
+  input_items?: TurnInputItem[];
 }
 
 export interface AdapterTurnContext {

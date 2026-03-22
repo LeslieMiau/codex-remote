@@ -1,12 +1,18 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
-import type { CodexReviewDelivery, CodexReviewTarget } from "@codex-remote/protocol";
+import type {
+  CodexReviewDelivery,
+  CodexReviewTarget,
+  TurnInputItem
+} from "@codex-remote/protocol";
 
+import { buildAppServerPromptInputs } from "../lib/app-server-inputs";
 import {
   JsonLineFramer,
   encodeJsonLineMessage
 } from "../lib/rpc-framer";
 import { resolveCodexAppServerEnvironment } from "../lib/system-proxy";
+import { CodexAttachmentStore } from "./codex-attachment-store";
 
 type JsonRpcId = number | string;
 
@@ -129,6 +135,7 @@ export interface CodexSharedThread {
 
 export class CodexCommandBridge {
   private readonly options: ResolvedCodexCommandBridgeOptions;
+  private readonly attachmentStore: CodexAttachmentStore;
 
   constructor(options: CodexCommandBridgeOptions = {}) {
     this.options = {
@@ -137,6 +144,9 @@ export class CodexCommandBridge {
       codexHome: options.codexHome,
       requestTimeoutMs: options.requestTimeoutMs ?? 30_000
     };
+    this.attachmentStore = new CodexAttachmentStore({
+      codexHome: this.options.codexHome
+    });
   }
 
   private async withClient<T>(
@@ -408,7 +418,12 @@ export class CodexCommandBridge {
     });
   }
 
-  async steerSharedTurn(input: { threadId: string; turnId: string; prompt: string }) {
+  async steerSharedTurn(input: {
+    threadId: string;
+    turnId: string;
+    prompt: string;
+    inputItems?: TurnInputItem[];
+  }) {
     return this.withClient(async ({ request, waitForExit }) => {
       try {
         await Promise.race([
@@ -424,17 +439,17 @@ export class CodexCommandBridge {
         }
       }
 
+      const promptInputs = await buildAppServerPromptInputs({
+        prompt: input.prompt,
+        inputItems: input.inputItems,
+        attachmentStore: this.attachmentStore
+      });
+
       await Promise.race([
         request("turn/steer", {
           threadId: input.threadId,
           expectedTurnId: input.turnId,
-          input: [
-            {
-              type: "text",
-              text: input.prompt,
-              text_elements: []
-            }
-          ]
+          input: promptInputs
         }),
         waitForExit
       ]);

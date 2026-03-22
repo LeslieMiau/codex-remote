@@ -1053,6 +1053,7 @@ export async function createGatewayServer(
         const thread = store.getThread(run.thread_id);
         const remoteThreadId = thread?.adapter_thread_ref ?? run.thread_id;
         await commandBridge.steerSharedTurn({
+          inputItems: body.input_items,
           threadId: remoteThreadId,
           turnId: run.turn_id,
           prompt: body.prompt

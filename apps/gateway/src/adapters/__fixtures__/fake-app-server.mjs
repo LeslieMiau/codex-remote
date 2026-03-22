@@ -314,6 +314,14 @@ async function handleRequest(message) {
     return;
   }
 
+  if (message.method === "turn/steer") {
+    log(`turn-steer-input:${JSON.stringify(message.params?.input ?? [])}`);
+    respond(message.id, {
+      steered: true
+    });
+    return;
+  }
+
   respond(message.id, {});
 }
 

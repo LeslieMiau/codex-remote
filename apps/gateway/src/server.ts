@@ -1372,7 +1372,8 @@ export async function createGatewayServer(
         };
       }
 
-      const thread = await bridge.getThread(threadId);
+      const thread =
+        (await bridge.getThread(threadId)) ?? fallbackThreadFromStore(store, threadId);
       if (!thread) {
         reply.code(404);
         return {
@@ -1424,7 +1425,8 @@ export async function createGatewayServer(
         };
       }
 
-      const thread = await bridge.getThread(threadId);
+      const thread =
+        (await bridge.getThread(threadId)) ?? fallbackThreadFromStore(store, threadId);
       if (!thread) {
         reply.code(404);
         return {
@@ -1525,7 +1527,8 @@ export async function createGatewayServer(
         };
       }
 
-      const thread = await bridge.getThread(threadId);
+      const thread =
+        (await bridge.getThread(threadId)) ?? fallbackThreadFromStore(store, threadId);
       if (!thread) {
         reply.code(404);
         return {
@@ -1574,7 +1577,8 @@ export async function createGatewayServer(
         };
       }
 
-      const thread = await bridge.getThread(threadId);
+      const thread =
+        (await bridge.getThread(threadId)) ?? fallbackThreadFromStore(store, threadId);
       if (!thread) {
         reply.code(404);
         return {
@@ -1641,7 +1645,8 @@ export async function createGatewayServer(
         };
       }
 
-      const thread = await bridge.getThread(threadId);
+      const thread =
+        (await bridge.getThread(threadId)) ?? fallbackThreadFromStore(store, threadId);
       if (!thread) {
         reply.code(404);
         return {
@@ -1686,7 +1691,8 @@ export async function createGatewayServer(
         };
       }
 
-      const thread = await bridge.getThread(threadId);
+      const thread =
+        (await bridge.getThread(threadId)) ?? fallbackThreadFromStore(store, threadId);
       if (!thread) {
         reply.code(404);
         return {

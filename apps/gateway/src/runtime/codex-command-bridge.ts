@@ -79,6 +79,49 @@ interface AppServerReviewStartResponse {
   };
 }
 
+function delay(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function requestWithThreadRetry(input: {
+  method: string;
+  params: Record<string, unknown>;
+  request: (
+    method: string,
+    params?: Record<string, unknown>
+  ) => Promise<Record<string, unknown> | undefined>;
+  retries?: number;
+  retryDelayMs?: number;
+  waitForExit: Promise<never>;
+}) {
+  const retries = input.retries ?? 20;
+  const retryDelayMs = input.retryDelayMs ?? 150;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < retries; attempt += 1) {
+    try {
+      return await Promise.race([
+        input.request(input.method, input.params),
+        input.waitForExit
+      ]);
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/thread not found/i.test(message)) {
+        throw error;
+      }
+      await delay(retryDelayMs);
+    }
+  }
+
+  throw (
+    lastError ??
+    new Error(`Timed out waiting for app-server thread request ${input.method}.`)
+  );
+}
+
 export interface CodexSharedThread {
   archived: boolean;
   thread: AppServerThread;
@@ -241,6 +284,33 @@ export class CodexCommandBridge {
         throw new Error("codex app-server did not return a thread id");
       }
 
+      let threadReady = false;
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        try {
+          await requestWithThreadRetry({
+            method: "thread/read",
+            params: {
+              threadId: thread.id,
+              includeTurns: false
+            },
+            request,
+            retries: 1,
+            waitForExit
+          });
+          threadReady = true;
+          break;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!/thread not found/i.test(message)) {
+            throw error;
+          }
+          await delay(150);
+        }
+      }
+      if (!threadReady) {
+        throw new Error(`codex app-server did not finish creating thread ${thread.id}`);
+      }
+
       return {
         thread_id: thread.id
       };
@@ -290,13 +360,15 @@ export class CodexCommandBridge {
 
   async readSharedThread(input: { threadId: string; includeTurns?: boolean }) {
     return this.withClient(async ({ request, waitForExit }) => {
-      const response = (await Promise.race([
-        request("thread/read", {
+      const response = (await requestWithThreadRetry({
+        method: "thread/read",
+        params: {
           threadId: input.threadId,
           includeTurns: input.includeTurns ?? true
-        }),
+        },
+        request,
         waitForExit
-      ])) as AppServerThreadReadResponse | undefined;
+      })) as AppServerThreadReadResponse | undefined;
 
       if (!response?.thread) {
         throw new Error(`codex app-server did not return thread ${input.threadId}`);
@@ -375,13 +447,15 @@ export class CodexCommandBridge {
 
   async renameSharedThread(input: { threadId: string; name: string }) {
     return this.withClient(async ({ request, waitForExit }) => {
-      await Promise.race([
-        request("thread/rename", {
+      await requestWithThreadRetry({
+        method: "thread/name/set",
+        params: {
           threadId: input.threadId,
           name: input.name
-        }),
+        },
+        request,
         waitForExit
-      ]);
+      });
 
       return {
         renamed: true
@@ -391,12 +465,14 @@ export class CodexCommandBridge {
 
   async archiveSharedThread(input: { threadId: string }) {
     return this.withClient(async ({ request, waitForExit }) => {
-      await Promise.race([
-        request("thread/archive", {
+      await requestWithThreadRetry({
+        method: "thread/archive",
+        params: {
           threadId: input.threadId
-        }),
+        },
+        request,
         waitForExit
-      ]);
+      });
 
       return {
         archived: true
@@ -406,12 +482,14 @@ export class CodexCommandBridge {
 
   async unarchiveSharedThread(input: { threadId: string }) {
     return this.withClient(async ({ request, waitForExit }) => {
-      await Promise.race([
-        request("thread/unarchive", {
+      await requestWithThreadRetry({
+        method: "thread/unarchive",
+        params: {
           threadId: input.threadId
-        }),
+        },
+        request,
         waitForExit
-      ]);
+      });
 
       return {
         unarchived: true
@@ -421,12 +499,14 @@ export class CodexCommandBridge {
 
   async compactSharedThread(input: { threadId: string }) {
     return this.withClient(async ({ request, waitForExit }) => {
-      await Promise.race([
-        request("thread/compact", {
+      await requestWithThreadRetry({
+        method: "thread/compact/start",
+        params: {
           threadId: input.threadId
-        }),
+        },
+        request,
         waitForExit
-      ]);
+      });
 
       return {
         compacted: true
@@ -436,12 +516,14 @@ export class CodexCommandBridge {
 
   async forkSharedThread(input: { threadId: string }) {
     return this.withClient(async ({ request, waitForExit }) => {
-      const response = await Promise.race([
-        request("thread/fork", {
+      const response = await requestWithThreadRetry({
+        method: "thread/fork",
+        params: {
           threadId: input.threadId
-        }),
+        },
+        request,
         waitForExit
-      ]);
+      });
       const threadId =
         (typeof response?.threadId === "string" && response.threadId) ||
         (typeof (response?.thread as Record<string, unknown> | undefined)?.id === "string"
@@ -460,13 +542,15 @@ export class CodexCommandBridge {
 
   async rollbackSharedThread(input: { threadId: string; numTurns?: number }) {
     return this.withClient(async ({ request, waitForExit }) => {
-      const response = await Promise.race([
-        request("thread/rollback", {
+      const response = await requestWithThreadRetry({
+        method: "thread/rollback",
+        params: {
           threadId: input.threadId,
           numTurns: input.numTurns
-        }),
+        },
+        request,
         waitForExit
-      ]);
+      });
       const threadId =
         (typeof response?.threadId === "string" && response.threadId) ||
         input.threadId;
@@ -492,14 +576,16 @@ export class CodexCommandBridge {
             }
           : input.target;
 
-      const response = (await Promise.race([
-        request("review/start", {
+      const response = (await requestWithThreadRetry({
+        method: "review/start",
+        params: {
           threadId: input.threadId,
           target,
           delivery: input.delivery
-        }),
+        },
+        request,
         waitForExit
-      ])) as AppServerReviewStartResponse | undefined;
+      })) as AppServerReviewStartResponse | undefined;
 
       if (!response?.turn?.id || !response.reviewThreadId) {
         throw new Error("codex app-server did not return a review thread.");

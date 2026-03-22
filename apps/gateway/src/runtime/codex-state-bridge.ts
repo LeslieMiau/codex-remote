@@ -84,6 +84,7 @@ interface TranscriptCursor {
 }
 
 const DEFAULT_SYNC_TIMEOUT_MS = 20_000;
+const NATIVE_THREAD_DISCOVERY_GRACE_MS = 30_000;
 
 function toIsoTimestamp(raw: number | string) {
   const value = typeof raw === "number" ? raw : Number(raw);
@@ -97,6 +98,15 @@ function toIsoTimestamp(raw: number | string) {
 
 function projectIdFromRepoRoot(repoRoot: string) {
   return `project_${slugify(repoRoot)}`;
+}
+
+function isWithinNativeDiscoveryGrace(updatedAt: string) {
+  const updatedAtMs = Date.parse(updatedAt);
+  if (!Number.isFinite(updatedAtMs)) {
+    return false;
+  }
+
+  return Date.now() - updatedAtMs < NATIVE_THREAD_DISCOVERY_GRACE_MS;
 }
 
 function projectLabelFromRepoRoot(repoRoot: string) {
@@ -520,7 +530,8 @@ export class CodexStateBridge {
       if (
         thread.adapter_kind !== "codex-app-server" ||
         !thread.adapter_thread_ref ||
-        activeThreadIds.has(thread.adapter_thread_ref)
+        activeThreadIds.has(thread.adapter_thread_ref) ||
+        isWithinNativeDiscoveryGrace(thread.updated_at)
       ) {
         continue;
       }

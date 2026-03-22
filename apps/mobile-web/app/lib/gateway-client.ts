@@ -27,6 +27,13 @@ import {
   buildGatewayWsUrl,
   getGatewayBase
 } from "./gateway-url";
+import {
+  buildApprovalApiPath,
+  buildNativeRequestApiPath,
+  buildPatchApiPath,
+  buildRunApiPath,
+  buildThreadApiPath
+} from "./codex-paths";
 
 export class GatewayRequestError extends Error {
   constructor(
@@ -253,7 +260,7 @@ function buildSettings(): CodexSharedSettingsResponse {
 }
 
 export async function archiveSharedThread(threadId: string) {
-  return requestJson(`/threads/${threadId}/archive`, {
+  return requestJson(buildThreadApiPath(threadId, "/archive"), {
     method: "POST",
     body: JSON.stringify({
       actor_id: "mobile_web",
@@ -263,7 +270,7 @@ export async function archiveSharedThread(threadId: string) {
 }
 
 export async function compactSharedThread(threadId: string) {
-  return requestJson(`/threads/${threadId}/compact`, {
+  return requestJson(buildThreadApiPath(threadId, "/compact"), {
     method: "POST",
     body: JSON.stringify({
       actor_id: "mobile_web",
@@ -289,7 +296,7 @@ export async function decidePatch(
   action: "apply" | "discard" | "rollback"
 ) {
   if (action === "rollback") {
-    return requestJson(`/patches/${patchId}/rollback`, {
+    return requestJson(buildPatchApiPath(patchId, "/rollback"), {
       method: "POST",
       body: JSON.stringify({
         actor_id: "mobile_web",
@@ -298,7 +305,7 @@ export async function decidePatch(
     });
   }
 
-  return requestJson(`/patches/${patchId}/${action}`, {
+  return requestJson(buildPatchApiPath(patchId, `/${action}`), {
     method: "POST",
     body: JSON.stringify({
       actor_id: "mobile_web",
@@ -312,7 +319,7 @@ export async function followUpRun(
   prompt: string,
   inputItems?: SharedRunInputItem[]
 ) {
-  return requestJson(`/runs/${runId}/follow-ups`, {
+  return requestJson(buildRunApiPath(runId, "/follow-ups"), {
     method: "POST",
     body: JSON.stringify({
       actor_id: "mobile_web",
@@ -324,7 +331,7 @@ export async function followUpRun(
 }
 
 export async function forkSharedThread(threadId: string): Promise<CodexThreadForkResponse> {
-  return requestJson<CodexThreadForkResponse>(`/threads/${threadId}/fork`, {
+  return requestJson<CodexThreadForkResponse>(buildThreadApiPath(threadId, "/fork"), {
     method: "POST",
     body: JSON.stringify({
       actor_id: "mobile_web",
@@ -342,7 +349,10 @@ export async function getCodexMessagesLatest(
   limit = 20
 ): Promise<CodexTranscriptPageResponse> {
   return readOrFallback(
-    `/threads/${threadId}/messages/latest?limit=${encodeURIComponent(String(limit))}`,
+    buildThreadApiPath(
+      threadId,
+      `/messages/latest?limit=${encodeURIComponent(String(limit))}`
+    ),
     () => buildTranscript(threadId)
   );
 }
@@ -361,7 +371,10 @@ export async function getCodexMessagesPage(input: {
     search.set("limit", String(input.limit));
   }
   const suffix = search.size > 0 ? `?${search.toString()}` : "";
-  return readOrFallback(`/threads/${threadId}/messages${suffix}`, () => buildTranscript(threadId));
+  return readOrFallback(
+    buildThreadApiPath(threadId, `/messages${suffix}`),
+    () => buildTranscript(threadId)
+  );
 }
 
 export async function getCodexOverview(input?: {
@@ -400,14 +413,16 @@ export async function updateCodexSharedSettings(
 }
 
 export async function getCodexTimeline(threadId: string): Promise<CodexTimelineResponse> {
-  return readOrFallback(`/threads/${threadId}/timeline`, () => buildTimeline(threadId));
+  return readOrFallback(buildThreadApiPath(threadId, "/timeline"), () =>
+    buildTimeline(threadId)
+  );
 }
 
 export async function getThreadSkills(threadId: string): Promise<
   CodexThreadSkillsResponse["skills"]
 > {
   const response = await readOrFallback<CodexThreadSkillsResponse>(
-    `/threads/${threadId}/skills`,
+    buildThreadApiPath(threadId, "/skills"),
     () => ({
       cwd: "",
       skills: [],
@@ -418,7 +433,7 @@ export async function getThreadSkills(threadId: string): Promise<
 }
 
 export async function interruptSharedRun(runId: string) {
-  return requestJson(`/runs/${runId}/interrupt`, {
+  return requestJson(buildRunApiPath(runId, "/interrupt"), {
     method: "POST",
     body: JSON.stringify({
       actor_id: "mobile_web",
@@ -428,7 +443,7 @@ export async function interruptSharedRun(runId: string) {
 }
 
 export async function renameSharedThread(threadId: string, name: string) {
-  return requestJson(`/threads/${threadId}/name`, {
+  return requestJson(buildThreadApiPath(threadId, "/name"), {
     method: "POST",
     body: JSON.stringify({
       actor_id: "mobile_web",
@@ -445,7 +460,7 @@ export async function respondNativeRequest(input: {
 }): Promise<NativeRequestRecord | null> {
   const response = await requestJson<{
     native_request?: NativeRequestRecord;
-  }>(`/native-requests/${input.nativeRequestId}/respond`, {
+  }>(buildNativeRequestApiPath(input.nativeRequestId), {
     method: "POST",
     body: JSON.stringify({
       actor_id: "mobile_web",
@@ -467,7 +482,7 @@ export async function resolveApproval(
 ): Promise<ApprovalRequest | null> {
   const response = await requestJson<{
     approval?: ApprovalRequest;
-  }>(`/approvals/${approvalId}/${approved ? "approve" : "reject"}`, {
+  }>(buildApprovalApiPath(approvalId, approved ? "approve" : "reject"), {
     method: "POST",
     body: JSON.stringify({
       actor_id: "mobile_web",
@@ -480,7 +495,7 @@ export async function resolveApproval(
 }
 
 export async function rollbackSharedThread(threadId: string, numTurns?: number) {
-  return requestJson(`/threads/${threadId}/rollback`, {
+  return requestJson(buildThreadApiPath(threadId, "/rollback"), {
     method: "POST",
     body: JSON.stringify({
       actor_id: "mobile_web",
@@ -493,8 +508,13 @@ export async function rollbackSharedThread(threadId: string, numTurns?: number) 
 export async function startSharedReview(
   input: CodexReviewStartBody
 ): Promise<CodexReviewStartResponse> {
+  const threadId = input.thread_id ?? input.threadId;
+  if (!threadId) {
+    throw new GatewayRequestError("A thread id is required to start a review.", 400);
+  }
+
   return requestJson<CodexReviewStartResponse>(
-    `/threads/${input.thread_id ?? input.threadId}/reviews`,
+    buildThreadApiPath(threadId, "/reviews"),
     {
       method: "POST",
       body: JSON.stringify({
@@ -513,7 +533,7 @@ export async function startSharedRun(
   inputItems?: SharedRunInputItem[],
   collaborationMode?: "default" | "plan"
 ) {
-  return requestJson(`/threads/${threadId}/runs`, {
+  return requestJson(buildThreadApiPath(threadId, "/runs"), {
     method: "POST",
     body: JSON.stringify({
       actor_id: "mobile_web",
@@ -681,7 +701,7 @@ export function subscribeToThreadStream(input: {
 }
 
 export async function unarchiveSharedThread(threadId: string) {
-  return requestJson(`/threads/${threadId}/unarchive`, {
+  return requestJson(buildThreadApiPath(threadId, "/unarchive"), {
     method: "POST",
     body: JSON.stringify({
       actor_id: "mobile_web",
@@ -697,8 +717,11 @@ export async function uploadSharedThreadImage(
   const formData = new FormData();
   formData.set("file", file);
 
-  return requestJson<UploadedImageAttachment>(`/threads/${threadId}/attachments/images`, {
-    method: "POST",
-    body: formData
-  });
+  return requestJson<UploadedImageAttachment>(
+    buildThreadApiPath(threadId, "/attachments/images"),
+    {
+      method: "POST",
+      body: formData
+    }
+  );
 }

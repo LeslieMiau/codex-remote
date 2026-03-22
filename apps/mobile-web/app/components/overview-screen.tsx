@@ -16,6 +16,10 @@ import {
   setCachedOverview
 } from "../lib/client-cache";
 import {
+  buildThreadPatchPath,
+  buildThreadPath
+} from "../lib/codex-paths";
+import {
   formatDateTime,
   localize,
   translateQueueKind,
@@ -348,7 +352,7 @@ export function OverviewScreen() {
       });
       setStoredLastActiveThread(created.thread.thread_id);
       setIsNewThreadOpen(false);
-      router.push(`/threads/${created.thread.thread_id}`);
+      router.push(buildThreadPath(created.thread.thread_id));
     } catch (createError) {
       setCreateError(createError instanceof Error ? createError.message : String(createError));
     } finally {
@@ -496,8 +500,11 @@ export function OverviewScreen() {
                   className="primary-button"
                   href={
                     topPriorityEntry.patch_id
-                      ? `/threads/${topPriorityEntry.thread_id}/patches/${topPriorityEntry.patch_id}`
-                      : `/threads/${topPriorityEntry.thread_id}`
+                      ? buildThreadPatchPath(
+                          topPriorityEntry.thread_id,
+                          topPriorityEntry.patch_id
+                        )
+                      : buildThreadPath(topPriorityEntry.thread_id)
                   }
                   onClick={() => setStoredLastActiveThread(topPriorityEntry.thread_id)}
                 >
@@ -506,7 +513,7 @@ export function OverviewScreen() {
               ) : latestThread ? (
                 <Link
                   className="primary-button"
-                  href={`/threads/${latestThread.thread_id}`}
+                  href={buildThreadPath(latestThread.thread_id)}
                   onClick={() => setStoredLastActiveThread(latestThread.thread_id)}
                 >
                   {isZh ? "继续聊天" : "Continue chat"}
@@ -597,8 +604,8 @@ export function OverviewScreen() {
                     className="codex-focus-item"
                     href={
                       entry.patch_id
-                        ? `/threads/${entry.thread_id}/patches/${entry.patch_id}`
-                        : `/threads/${entry.thread_id}`
+                        ? buildThreadPatchPath(entry.thread_id, entry.patch_id)
+                        : buildThreadPath(entry.thread_id)
                     }
                     onClick={() => setStoredLastActiveThread(entry.thread_id)}
                   >
@@ -665,7 +672,7 @@ export function OverviewScreen() {
                           ? "is-live"
                           : ""
                     }`}
-                    href={`/threads/${thread.thread_id}`}
+                    href={buildThreadPath(thread.thread_id)}
                     onClick={() => setStoredLastActiveThread(thread.thread_id)}
                   >
                     <div className="codex-chat-row">
@@ -767,7 +774,7 @@ export function OverviewScreen() {
                                 ? "is-live"
                                 : ""
                           }`}
-                          href={`/threads/${thread.thread_id}`}
+                          href={buildThreadPath(thread.thread_id)}
                           onClick={() => setStoredLastActiveThread(thread.thread_id)}
                         >
                           <div className="codex-chat-row">

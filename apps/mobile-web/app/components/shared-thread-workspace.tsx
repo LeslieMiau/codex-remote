@@ -32,6 +32,10 @@ import {
   setCachedTranscript
 } from "../lib/client-cache";
 import {
+  buildThreadPatchPath,
+  buildThreadPath
+} from "../lib/codex-paths";
+import {
   archiveSharedThread,
   compactSharedThread,
   forkSharedThread,
@@ -1352,7 +1356,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
 
   function openPatchReview(patchId: string) {
     setMobilePanel(null);
-    router.push(`/threads/${threadId}/patches/${patchId}`);
+    router.push(buildThreadPatchPath(threadId, patchId));
   }
 
   async function refreshLatest() {
@@ -1424,7 +1428,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
   function handleThreadSelect(nextThreadId: string) {
     setStoredLastActiveThread(nextThreadId);
     setMobilePanel(null);
-    router.push(`/threads/${nextThreadId}`);
+    router.push(buildThreadPath(nextThreadId));
   }
 
   async function loadOlderMessages() {
@@ -1626,7 +1630,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
         })
       });
       setStoredLastActiveThread(nextThreadId);
-      router.push(`/threads/${nextThreadId}`);
+      router.push(buildThreadPath(nextThreadId));
     } catch (actionError) {
       setError(describeActionError(locale, actionError));
     } finally {
@@ -1673,7 +1677,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
         })
       });
       setStoredLastActiveThread(started.review_thread_id);
-      router.push(`/threads/${started.review_thread_id}`);
+      router.push(buildThreadPath(started.review_thread_id));
     } catch (actionError) {
       setError(describeActionError(locale, actionError));
     } finally {

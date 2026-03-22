@@ -5,6 +5,7 @@ import type { CodexOverviewResponse, CodexQueueEntry } from "@codex-remote/proto
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { getCachedOverview, setCachedOverview } from "../lib/client-cache";
+import { buildThreadPatchPath, buildThreadPath } from "../lib/codex-paths";
 import { getCodexOverview } from "../lib/gateway-client";
 import {
   formatDateTime,
@@ -24,9 +25,9 @@ const POLL_INTERVAL_MS = 2_500;
 
 function buildQueueHref(entry: CodexQueueEntry) {
   if (entry.patch_id) {
-    return `/threads/${entry.thread_id}/patches/${entry.patch_id}`;
+    return buildThreadPatchPath(entry.thread_id, entry.patch_id);
   }
-  return `/threads/${entry.thread_id}`;
+  return buildThreadPath(entry.thread_id);
 }
 
 function getAvatarLabel(value: string) {

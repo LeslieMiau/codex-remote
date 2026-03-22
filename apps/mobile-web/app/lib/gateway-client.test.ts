@@ -229,11 +229,11 @@ describe("uploadSharedThreadImage", () => {
     const file = new File(["png"], "screen.png", {
       type: "image/png"
     });
-    const uploaded = await uploadSharedThreadImage("thread-upload", file);
+    const uploaded = await uploadSharedThreadImage("thread/upload test", file);
 
     expect(uploaded.attachment_id).toBe("attachment-1");
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/threads/thread-upload/attachments/images",
+      "/api/threads/thread%2Fupload%20test/attachments/images",
       expect.objectContaining({
         method: "POST"
       })

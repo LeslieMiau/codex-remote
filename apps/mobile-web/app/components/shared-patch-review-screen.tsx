@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CodexTimelineResponse } from "@codex-remote/protocol";
 
+import { buildThreadPath } from "../lib/codex-paths";
 import { decidePatch, getCodexTimeline } from "../lib/gateway-client";
 import { writeThreadFlashMessage } from "../lib/flash-message";
 import {
@@ -155,7 +156,7 @@ export function SharedPatchReviewScreen({
         message: getSuccessMessage(action),
         threadId
       });
-      router.replace(`/threads/${threadId}`);
+      router.replace(buildThreadPath(threadId));
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : String(actionError));
       setIsMutating(false);
@@ -178,7 +179,7 @@ export function SharedPatchReviewScreen({
         message: getSuccessMessage(action),
         threadId
       });
-      router.replace(`/threads/${threadId}`);
+      router.replace(buildThreadPath(threadId));
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : String(actionError));
       setIsMutating(false);
@@ -201,7 +202,7 @@ export function SharedPatchReviewScreen({
   if (!timeline || !patch) {
     return (
       <CodexShell
-        backHref={`/threads/${threadId}`}
+        backHref={buildThreadPath(threadId)}
         eyebrow={isZh ? "变更" : "Change"}
         subtitle={
           isZh
@@ -226,7 +227,7 @@ export function SharedPatchReviewScreen({
               ? "聊天还在，但这次变更已经不再处于待查看状态。"
               : "The chat is still available, but this change is no longer pending review."}
           </p>
-          <Link className="primary-button" href={`/threads/${threadId}`}>
+          <Link className="primary-button" href={buildThreadPath(threadId)}>
             {isZh ? "返回聊天" : "Back to chat"}
           </Link>
         </section>
@@ -242,7 +243,7 @@ export function SharedPatchReviewScreen({
       actions={
         <div className="codex-header-cues">
           <span className="state-pill">{translatePatchStatus(locale, patch.status)}</span>
-          <Link className="chrome-button" href={`/threads/${threadId}`}>
+          <Link className="chrome-button" href={buildThreadPath(threadId)}>
             {isZh ? "返回聊天" : "Back to chat"}
           </Link>
         </div>

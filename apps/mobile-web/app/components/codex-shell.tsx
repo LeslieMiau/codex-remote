@@ -12,6 +12,7 @@ import {
 } from "react";
 
 import { getCachedOverview } from "../lib/client-cache";
+import { buildThreadPath } from "../lib/codex-paths";
 import { useLocale } from "../lib/locale";
 import { getStoredLastActiveThread } from "../lib/thread-storage";
 import { useNavigationGuard } from "./navigation-guard-provider";
@@ -212,7 +213,9 @@ export function CodexShell({
     };
   }, []);
 
-  const currentThreadHref = lastActiveThread ? `/threads/${lastActiveThread}` : "/projects";
+  const currentThreadHref = lastActiveThread
+    ? buildThreadPath(lastActiveThread)
+    : "/projects";
   const navItems = [
     { href: "/projects", key: "projects" as const, label: isZh ? "聊天" : "Chats" },
     { href: "/queue", key: "queue" as const, label: isZh ? "待办" : "Tasks" },

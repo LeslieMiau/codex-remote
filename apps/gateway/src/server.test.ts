@@ -262,7 +262,11 @@ describe("gateway server", () => {
           url: "/queue"
         });
         return response.json() as {
-          entries: Array<{ kind: string; thread_id: string }>;
+          entries: Array<{
+            kind: string;
+            native_request_kind?: string;
+            thread_id: string;
+          }>;
         };
       },
       (payload) =>
@@ -299,7 +303,11 @@ describe("gateway server", () => {
           url: "/queue"
         });
         return response.json() as {
-          entries: Array<{ kind: string; thread_id: string }>;
+          entries: Array<{
+            kind: string;
+            native_request_kind?: string;
+            thread_id: string;
+          }>;
         };
       },
       (payload) =>
@@ -714,7 +722,11 @@ describe("gateway server", () => {
           url: "/queue"
         });
         return response.json() as {
-          entries: Array<{ kind: string; thread_id: string }>;
+          entries: Array<{
+            kind: string;
+            native_request_kind?: string;
+            thread_id: string;
+          }>;
         };
       },
       (payload) =>
@@ -724,7 +736,10 @@ describe("gateway server", () => {
     );
     expect(
       queueBeforeResponse.entries.some(
-        (entry) => entry.kind === "input" && entry.thread_id === threadId
+        (entry) =>
+          entry.kind === "input" &&
+          entry.native_request_kind === "user_input" &&
+          entry.thread_id === threadId
       )
     ).toBe(true);
 

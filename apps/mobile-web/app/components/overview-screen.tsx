@@ -31,7 +31,14 @@ import {
   compareThreadsForMobile,
   getMobileThreadPriority
 } from "../lib/mobile-priority";
-import { describePendingInputSummary } from "../lib/native-input-copy";
+import {
+  describeNativeRequestActionLabel,
+  describeNativeRequestQueueLabel,
+  describePendingInputSummary,
+  describeQueueInputPreview,
+  describeThreadPendingInputPreview,
+  isDesktopOrientedNativeRequest
+} from "../lib/native-input-copy";
 import { filterThreadsForQuery } from "../lib/thread-search";
 import { setStoredLastActiveThread } from "../lib/thread-storage";
 import { CodexShell } from "./codex-shell";
@@ -64,7 +71,11 @@ function getThreadBadgeLabel(locale: "zh" | "en", thread: CodexThread) {
   return null;
 }
 
-function describeThreadPreview(locale: "zh" | "en", thread: CodexThread) {
+function describeThreadPreview(
+  locale: "zh" | "en",
+  thread: CodexThread,
+  nativeRequestKind?: CodexQueueEntry["native_request_kind"]
+) {
   if (thread.archived) {
     return localize(locale, {
       zh: "这条聊天已归档，需要时仍然可以重新打开。",
@@ -73,10 +84,7 @@ function describeThreadPreview(locale: "zh" | "en", thread: CodexThread) {
   }
 
   if (thread.pending_native_requests > 0) {
-    return localize(locale, {
-      zh: "Codex 正等你回复，回一句就能继续往下跑。",
-      en: "Codex is waiting for your reply before this chat can keep going."
-    });
+    return describeThreadPendingInputPreview(locale, nativeRequestKind);
   }
 
   if (thread.pending_approvals > 0 && thread.pending_patches > 0) {
@@ -143,10 +151,11 @@ function describeQueuePreview(locale: "zh" | "en", entry: CodexQueueEntry) {
   const detail = entry.summary ?? entry.status;
   switch (entry.kind) {
     case "input":
-      return localize(locale, {
-        zh: `需要你回一条消息。${detail}`,
-        en: `Needs a reply from you. ${detail}`
-      });
+      return describeQueueInputPreview(
+        locale,
+        entry.native_request_kind ?? "user_input",
+        detail
+      );
     case "approval":
       return localize(locale, {
         zh: `新的批准请求到了。${detail}`,
@@ -288,8 +297,23 @@ export function OverviewScreen() {
   );
   const leadInputEntry = pendingInputEntries[0] ?? null;
   const inputSummary = leadInputEntry
-    ? describePendingInputSummary(locale, pendingInputEntries.length)
+    ? describePendingInputSummary(
+        locale,
+        pendingInputEntries.length,
+        leadInputEntry.native_request_kind ?? "user_input"
+      )
     : null;
+  const pendingInputKindsByThreadId = useMemo(() => {
+    const kinds = new Map<string, CodexQueueEntry["native_request_kind"]>();
+
+    for (const entry of pendingInputEntries) {
+      if (!kinds.has(entry.thread_id)) {
+        kinds.set(entry.thread_id, entry.native_request_kind);
+      }
+    }
+
+    return kinds;
+  }, [pendingInputEntries]);
   const repoGroups = useMemo(() => {
     const groups = new Map<
       string,
@@ -466,7 +490,7 @@ export function OverviewScreen() {
           {leadInputEntry && inputSummary ? (
             <section className="codex-status-strip tone-warning">
               <div className="codex-status-strip__copy">
-                <p className="section-label">{isZh ? "正在等你回复" : "Waiting on you"}</p>
+                <p className="section-label">{inputSummary.eyebrow}</p>
                 <strong>{inputSummary.title}</strong>
                 <p>{inputSummary.body}</p>
               </div>
@@ -501,10 +525,7 @@ export function OverviewScreen() {
               <p>
                 {topPriorityEntry
                   ? topPriorityEntry.kind === "input"
-                    ? localize(locale, {
-                        zh: `这条聊天正卡在你的回复上。${topPriorityEntry.summary ?? topPriorityEntry.status}`,
-                        en: `This chat is paused on your reply. ${topPriorityEntry.summary ?? topPriorityEntry.status}`
-                      })
+                    ? describeQueuePreview(locale, topPriorityEntry)
                     : localize(locale, {
                         zh: `${translateQueueKind(locale, topPriorityEntry.kind)}需要优先处理。${topPriorityEntry.summary ?? topPriorityEntry.status}`,
                         en: `${translateQueueKind(locale, topPriorityEntry.kind)} needs attention first. ${topPriorityEntry.summary ?? topPriorityEntry.status}`
@@ -543,7 +564,10 @@ export function OverviewScreen() {
                   onClick={() => setStoredLastActiveThread(topPriorityEntry.thread_id)}
                 >
                   {topPriorityEntry.kind === "input"
-                    ? localize(locale, { zh: "马上回复", en: "Reply now" })
+                    ? describeNativeRequestActionLabel(
+                        locale,
+                        topPriorityEntry.native_request_kind ?? "user_input"
+                      )
                     : localize(locale, { zh: "马上处理", en: "Open now" })}
                 </Link>
               ) : latestThread ? (
@@ -625,7 +649,12 @@ export function OverviewScreen() {
             <div className="codex-page-section__header">
               <div>
                 <p className="section-label">{isZh ? "收件箱" : "Inbox"}</p>
-                <h2>{isZh ? "优先回复这些" : "Reply to these first"}</h2>
+                <h2>
+                  {leadInputEntry &&
+                  isDesktopOrientedNativeRequest(leadInputEntry.native_request_kind)
+                    ? localize(locale, { zh: "先打开这些", en: "Open these first" })
+                    : localize(locale, { zh: "优先回复这些", en: "Reply to these first" })}
+                </h2>
               </div>
               <Link className="chrome-button" href="/queue">
                 {isZh ? "打开收件箱" : "Open inbox"}
@@ -665,7 +694,14 @@ export function OverviewScreen() {
                           </div>
                         </div>
                         <div className="codex-focus-item__meta">
-                          <span className="cue-pill">{translateQueueKind(locale, entry.kind)}</span>
+                          <span className="cue-pill">
+                            {entry.kind === "input"
+                              ? describeNativeRequestQueueLabel(
+                                  locale,
+                                  entry.native_request_kind ?? "user_input"
+                                )
+                              : translateQueueKind(locale, entry.kind)}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -720,7 +756,11 @@ export function OverviewScreen() {
                           <div>
                             <strong>{thread.title}</strong>
                             <p className="codex-thread-list-item__preview">
-                              {describeThreadPreview(locale, thread)}
+                              {describeThreadPreview(
+                                locale,
+                                thread,
+                                pendingInputKindsByThreadId.get(thread.thread_id)
+                              )}
                             </p>
                           </div>
                           <div className="codex-thread-list-item__aside">
@@ -822,7 +862,11 @@ export function OverviewScreen() {
                                 <div>
                                   <strong>{thread.title}</strong>
                                   <p className="codex-thread-list-item__preview">
-                                    {describeThreadPreview(locale, thread)}
+                                    {describeThreadPreview(
+                                      locale,
+                                      thread,
+                                      pendingInputKindsByThreadId.get(thread.thread_id)
+                                    )}
                                   </p>
                                 </div>
                                 <div className="codex-thread-list-item__aside">

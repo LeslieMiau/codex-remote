@@ -2,23 +2,40 @@ import { describe, expect, it } from "vitest";
 
 import {
   describeNativeRequestActionLabel,
+  describeNativeRequestQueueLabel,
   describeNativeRequestRecoveryNotice,
   describeNativeRequestTaskDetail,
   describeNativeRequestGateBody,
-  describePendingInputSummary
+  describePendingInputSummary,
+  describeQueueInputPreview,
+  describeThreadPendingInputPreview,
+  isDesktopOrientedNativeRequest
 } from "./native-input-copy";
 
 describe("describePendingInputSummary", () => {
   it("returns count-aware copy for pending inputs", () => {
     expect(describePendingInputSummary("en", 1)).toMatchObject({
       cta: "Reply now",
+      eyebrow: "Reply first",
       title: "1 chat is waiting for your input"
     });
 
     expect(describePendingInputSummary("zh", 3)).toMatchObject({
       cta: "先去回复",
+      eyebrow: "先回复这里",
       title: "有 3 条聊天正在等你输入"
     });
+  });
+
+  it("switches summary copy for desktop-oriented requests", () => {
+    expect(describePendingInputSummary("en", 2, "dynamic_tool")).toMatchObject({
+      cta: "See recovery steps",
+      eyebrow: "Desktop recovery",
+      title: "1 chat needs desktop recovery, plus 1 more waiting"
+    });
+    expect(describePendingInputSummary("zh", 1, "auth_refresh").body).toContain(
+      "桌面 Codex app"
+    );
   });
 });
 
@@ -43,6 +60,29 @@ describe("describeNativeRequestGateBody", () => {
 });
 
 describe("native request recovery helpers", () => {
+  it("detects desktop-oriented requests", () => {
+    expect(isDesktopOrientedNativeRequest("dynamic_tool")).toBe(true);
+    expect(isDesktopOrientedNativeRequest("auth_refresh")).toBe(true);
+    expect(isDesktopOrientedNativeRequest("user_input")).toBe(false);
+  });
+
+  it("adapts queue preview and labels to request kind", () => {
+    expect(
+      describeQueueInputPreview("en", "dynamic_tool", "Tool access is required.")
+    ).toContain("paused on a dynamic tool step");
+    expect(describeNativeRequestQueueLabel("zh", "auth_refresh")).toBe("桌面认证");
+    expect(describeNativeRequestQueueLabel("en", "user_input")).toBe("Reply here");
+  });
+
+  it("updates thread preview copy for desktop-oriented requests", () => {
+    expect(describeThreadPendingInputPreview("en", "dynamic_tool")).toContain(
+      "desktop Codex app"
+    );
+    expect(describeThreadPendingInputPreview("zh", "user_input")).toContain(
+      "Codex 正等你回复"
+    );
+  });
+
   it("uses stronger task detail for desktop-oriented requests", () => {
     expect(
       describeNativeRequestTaskDetail("en", "dynamic_tool", "Tool access is required.")

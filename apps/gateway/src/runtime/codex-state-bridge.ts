@@ -937,6 +937,7 @@ export class CodexStateBridge {
         entries.push({
           entry_id: `input-${nativeRequest.native_request_id}`,
           kind: "input",
+          native_request_kind: nativeRequest.kind,
           thread_id: thread.thread_id,
           title: thread.title,
           summary: nativeRequest.prompt ?? nativeRequest.title ?? "Additional input requested",

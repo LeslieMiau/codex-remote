@@ -9,6 +9,7 @@ import {
 } from "./common";
 import {
   ApprovalRequestSchema,
+  NativeRequestKindSchema,
   NativeRequestRecordSchema,
   PatchRecordSchema,
   TurnInputItemSchema,
@@ -330,6 +331,7 @@ export const CodexMessageSchema = z.object({
 export const CodexQueueEntrySchema = z.object({
   entry_id: z.string().min(1),
   kind: CodexQueueEntryKindSchema,
+  native_request_kind: NativeRequestKindSchema.optional(),
   thread_id: ThreadIdSchema,
   title: z.string().min(1),
   summary: z.string().optional(),

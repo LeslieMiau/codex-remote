@@ -515,8 +515,14 @@ describe("gateway recovery routes", () => {
     ]);
     expect(
       activeOnly.json().queue.some(
-        (entry: { kind: string; thread_id: string; status: string }) =>
+        (entry: {
+          kind: string;
+          native_request_kind?: string;
+          thread_id: string;
+          status: string;
+        }) =>
           entry.kind === "input" &&
+          entry.native_request_kind === "user_input" &&
           entry.thread_id === "thread_active" &&
           entry.status === "Waiting for input"
       )

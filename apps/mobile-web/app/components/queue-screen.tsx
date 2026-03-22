@@ -14,7 +14,11 @@ import {
   translateStatusText,
   useLocale
 } from "../lib/locale";
-import { describePendingInputSummary } from "../lib/native-input-copy";
+import {
+  describeNativeRequestQueueLabel,
+  describePendingInputSummary,
+  describeQueueInputPreview
+} from "../lib/native-input-copy";
 import {
   compareQueueEntriesForMobile,
   getMobileQueuePriority
@@ -44,10 +48,11 @@ function describeQueuePreview(locale: "zh" | "en", entry: CodexQueueEntry) {
   const detail = entry.summary ?? entry.status;
   switch (entry.kind) {
     case "input":
-      return localize(locale, {
-        zh: `这条聊天正等你回复。${detail}`,
-        en: `This chat is waiting for your reply. ${detail}`
-      });
+      return describeQueueInputPreview(
+        locale,
+        entry.native_request_kind ?? "user_input",
+        detail
+      );
     case "approval":
       return localize(locale, {
         zh: `新的批准请求到了。${detail}`,
@@ -163,7 +168,11 @@ export function QueueScreen() {
   );
   const leadInputEntry = inputEntries[0] ?? null;
   const inputSummary = leadInputEntry
-    ? describePendingInputSummary(locale, inputEntries.length)
+    ? describePendingInputSummary(
+        locale,
+        inputEntries.length,
+        leadInputEntry.native_request_kind ?? "user_input"
+      )
     : null;
   const groupedQueue = useMemo(() => {
     const threadsById = new Map(
@@ -244,9 +253,7 @@ export function QueueScreen() {
         {leadInputEntry && inputSummary ? (
           <section className="codex-status-strip tone-warning">
             <div className="codex-status-strip__copy">
-              <p className="section-label">
-                {localize(locale, { zh: "先回复这里", en: "Reply first" })}
-              </p>
+              <p className="section-label">{inputSummary.eyebrow}</p>
               <strong>{inputSummary.title}</strong>
               <p>{inputSummary.body}</p>
             </div>
@@ -317,7 +324,14 @@ export function QueueScreen() {
                         </div>
                       </div>
                       <div className="codex-focus-item__meta">
-                        <span className="cue-pill">{translateQueueKind(locale, entry.kind)}</span>
+                        <span className="cue-pill">
+                          {entry.kind === "input"
+                            ? describeNativeRequestQueueLabel(
+                                locale,
+                                entry.native_request_kind ?? "user_input"
+                              )
+                            : translateQueueKind(locale, entry.kind)}
+                        </span>
                         <span className="status-dot">
                           {translateStatusText(locale, entry.status)}
                         </span>
@@ -396,7 +410,12 @@ export function QueueScreen() {
                           </div>
                           <div className="codex-thread-card__meta">
                             <span className="cue-pill">
-                              {translateQueueKind(locale, entry.kind)}
+                              {entry.kind === "input"
+                                ? describeNativeRequestQueueLabel(
+                                    locale,
+                                    entry.native_request_kind ?? "user_input"
+                                  )
+                                : translateQueueKind(locale, entry.kind)}
                             </span>
                             <span className="status-dot">
                               {translateStatusText(locale, entry.status)}

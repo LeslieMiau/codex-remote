@@ -1,9 +1,57 @@
+import type { NativeRequestKind } from "@codex-remote/protocol";
+
 import { localize, type Locale } from "./locale";
 
-type NativeRequestKind = "user_input" | "dynamic_tool" | "auth_refresh";
+export function isDesktopOrientedNativeRequest(
+  kind: NativeRequestKind | undefined
+) {
+  return kind === "dynamic_tool" || kind === "auth_refresh";
+}
 
-export function describePendingInputSummary(locale: Locale, count: number) {
+export function describePendingInputSummary(
+  locale: Locale,
+  count: number,
+  kind: NativeRequestKind = "user_input"
+) {
   const safeCount = Math.max(0, count);
+
+  if (isDesktopOrientedNativeRequest(kind)) {
+    const remainingCount = Math.max(0, safeCount - 1);
+    const title = localize(locale, {
+      zh:
+        remainingCount > 0
+          ? `有 1 条聊天需要回桌面恢复，另有 ${remainingCount} 条仍在等待`
+          : "有 1 条聊天需要回桌面恢复",
+      en:
+        remainingCount > 0
+          ? `1 chat needs desktop recovery, plus ${remainingCount} more waiting`
+          : "1 chat needs desktop recovery"
+    });
+    const body = localize(locale, {
+      zh:
+        remainingCount > 0
+          ? "先在手机上查看这条请求的恢复步骤；如果要继续运行，通常要回到桌面 Codex app。其他暂停中的聊天也还在等你处理。"
+          : "先在手机上查看这条请求的恢复步骤；如果要继续运行，通常要回到桌面 Codex app。",
+      en:
+        remainingCount > 0
+          ? "Open this request on the phone first, but continuing usually happens in desktop Codex app. Other paused chats are still waiting too."
+          : "Open this request on the phone first, but continuing usually happens in desktop Codex app."
+    });
+
+    return {
+      body,
+      cta: localize(locale, {
+        zh: "查看恢复步骤",
+        en: "See recovery steps"
+      }),
+      eyebrow: localize(locale, {
+        zh: "建议回桌面",
+        en: "Desktop recovery"
+      }),
+      title
+    };
+  }
+
   const title = localize(locale, {
     zh: safeCount === 1 ? "有 1 条聊天正在等你输入" : `有 ${safeCount} 条聊天正在等你输入`,
     en:
@@ -25,8 +73,92 @@ export function describePendingInputSummary(locale: Locale, count: number) {
   return {
     body,
     cta,
+    eyebrow: localize(locale, {
+      zh: "先回复这里",
+      en: "Reply first"
+    }),
     title
   };
+}
+
+export function describeQueueInputPreview(
+  locale: Locale,
+  kind: NativeRequestKind = "user_input",
+  detail?: string
+) {
+  const safeDetail =
+    detail ??
+    localize(locale, {
+      zh: "Codex 正在等下一步。",
+      en: "Codex is waiting on the next step."
+    });
+
+  if (kind === "dynamic_tool") {
+    return localize(locale, {
+      zh: `这条聊天卡在动态工具步骤上。${safeDetail}`,
+      en: `This chat is paused on a dynamic tool step. ${safeDetail}`
+    });
+  }
+
+  if (kind === "auth_refresh") {
+    return localize(locale, {
+      zh: `这条聊天卡在认证刷新上。${safeDetail}`,
+      en: `This chat is waiting on an auth refresh. ${safeDetail}`
+    });
+  }
+
+  return localize(locale, {
+    zh: `这条聊天正等你回复。${safeDetail}`,
+    en: `This chat is waiting for your reply. ${safeDetail}`
+  });
+}
+
+export function describeNativeRequestQueueLabel(
+  locale: Locale,
+  kind: NativeRequestKind = "user_input"
+) {
+  if (kind === "dynamic_tool") {
+    return localize(locale, {
+      zh: "回桌面继续",
+      en: "Desktop step"
+    });
+  }
+
+  if (kind === "auth_refresh") {
+    return localize(locale, {
+      zh: "桌面认证",
+      en: "Desktop auth"
+    });
+  }
+
+  return localize(locale, {
+    zh: "手机可回",
+    en: "Reply here"
+  });
+}
+
+export function describeThreadPendingInputPreview(
+  locale: Locale,
+  kind: NativeRequestKind | undefined
+) {
+  if (kind === "dynamic_tool") {
+    return localize(locale, {
+      zh: "这条聊天卡在动态工具步骤上，通常要回到桌面 Codex app 继续。",
+      en: "This chat is paused on a dynamic tool step and usually continues in desktop Codex app."
+    });
+  }
+
+  if (kind === "auth_refresh") {
+    return localize(locale, {
+      zh: "这条聊天卡在认证刷新上，通常要回到桌面 Codex app 完成恢复。",
+      en: "This chat is waiting on an auth refresh and usually resumes from desktop Codex app."
+    });
+  }
+
+  return localize(locale, {
+    zh: "Codex 正等你回复，回一句就能继续往下跑。",
+    en: "Codex is waiting for your reply before this chat can keep going."
+  });
 }
 
 export function describeNativeRequestGateBody(

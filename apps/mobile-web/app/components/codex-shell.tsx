@@ -3,107 +3,40 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  useEffect,
-  useRef,
   useState,
+  useEffect,
   type CSSProperties,
   type MouseEvent,
   type ReactNode
 } from "react";
 
 import { getCachedOverview } from "../lib/client-cache";
-import { buildThreadPath } from "../lib/codex-paths";
 import { useLocale } from "../lib/locale";
-import { getStoredLastActiveThread } from "../lib/thread-storage";
 import { useNavigationGuard } from "./navigation-guard-provider";
+import { useKeyboardViewportState } from "./mobile-viewport";
 
 interface CodexShellProps {
   actions?: ReactNode;
-  backHref?: string;
   children: ReactNode;
-  compactHeader?: boolean;
   eyebrow?: string;
   subtitle?: string;
   title: string;
 }
 
-function isEditableElement(element: Element | null) {
-  if (!(element instanceof HTMLElement)) {
-    return false;
-  }
-
-  if (element.isContentEditable) {
-    return true;
-  }
-
-  if (element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
-    return true;
-  }
-
-  if (element instanceof HTMLInputElement) {
-    return !new Set([
-      "button",
-      "checkbox",
-      "color",
-      "file",
-      "hidden",
-      "image",
-      "radio",
-      "range",
-      "reset",
-      "submit"
-    ]).has(element.type);
-  }
-
-  return false;
-}
-
 function isCurrentPath(
   pathname: string,
-  href: string,
-  key?: "thread" | "queue" | "projects" | "settings"
+  href: string
 ) {
-  if (key === "thread" || href.startsWith("/threads/")) {
-    return pathname.startsWith("/threads/");
-  }
-  if (key === "projects") {
-    return pathname === "/projects" || pathname.startsWith("/projects/");
-  }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function TabIcon({ name }: { name: "thread" | "queue" | "projects" | "settings" }) {
+function TabIcon({ name }: { name: "projects" | "settings" }) {
   switch (name) {
-    case "thread":
-      return (
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <path
-            d="M6.5 7.5h11m-11 4.5h7m-7 4.5h9"
-            fill="none"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeWidth="1.8"
-          />
-        </svg>
-      );
-    case "queue":
-      return (
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <path
-            d="M7 7h10M7 12h10M7 17h6"
-            fill="none"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeWidth="1.8"
-          />
-          <circle cx="17.5" cy="17" r="1.5" fill="currentColor" />
-        </svg>
-      );
     case "projects":
       return (
         <svg aria-hidden="true" viewBox="0 0 24 24">
           <path
-            d="M5.5 7.5h13v9h-13zm4-3h5"
+            d="M6 7.5h12m-12 4.5h8m-8 4.5h11"
             fill="none"
             stroke="currentColor"
             strokeLinecap="round"
@@ -130,9 +63,7 @@ function TabIcon({ name }: { name: "thread" | "queue" | "projects" | "settings" 
 
 export function CodexShell({
   actions,
-  backHref,
   children,
-  compactHeader = false,
   eyebrow = "Codex",
   subtitle,
   title
@@ -141,18 +72,8 @@ export function CodexShell({
   const { locale } = useLocale();
   const isZh = locale === "zh";
   const { requestNavigation } = useNavigationGuard();
-  const [lastActiveThread, setLastActiveThread] = useState<string | null>(() =>
-    getStoredLastActiveThread()
-  );
-  const [keyboardOffset, setKeyboardOffset] = useState(0);
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const { keyboardOffset, keyboardOpen } = useKeyboardViewportState();
   const [queueBadge, setQueueBadge] = useState(0);
-  const [headerCollapsed, setHeaderCollapsed] = useState(false);
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    setLastActiveThread(getStoredLastActiveThread());
-  }, [pathname]);
 
   useEffect(() => {
     const updateBadge = () => {
@@ -167,58 +88,8 @@ export function CodexShell({
     const interval = setInterval(updateBadge, 3_000);
     return () => clearInterval(interval);
   }, []);
-
-  useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setHeaderCollapsed(!entry.isIntersecting),
-      { threshold: 0 }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const updateKeyboardState = () => {
-      const activeEditable = isEditableElement(document.activeElement);
-      const viewport = window.visualViewport;
-      const keyboardHeight = viewport
-        ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
-        : 0;
-      const nextOpen = activeEditable && keyboardHeight > 120;
-      setKeyboardOpen(nextOpen);
-      setKeyboardOffset(nextOpen ? Math.round(keyboardHeight) : 0);
-    };
-
-    updateKeyboardState();
-    const viewport = window.visualViewport;
-
-    window.addEventListener("resize", updateKeyboardState);
-    document.addEventListener("focusin", updateKeyboardState);
-    document.addEventListener("focusout", updateKeyboardState);
-    viewport?.addEventListener("resize", updateKeyboardState);
-    viewport?.addEventListener("scroll", updateKeyboardState);
-
-    return () => {
-      window.removeEventListener("resize", updateKeyboardState);
-      document.removeEventListener("focusin", updateKeyboardState);
-      document.removeEventListener("focusout", updateKeyboardState);
-      viewport?.removeEventListener("resize", updateKeyboardState);
-      viewport?.removeEventListener("scroll", updateKeyboardState);
-    };
-  }, []);
-
-  const currentThreadHref = lastActiveThread
-    ? buildThreadPath(lastActiveThread)
-    : "/projects";
   const navItems = [
     { href: "/projects", key: "projects" as const, label: isZh ? "聊天" : "Chats" },
-    { href: "/queue", key: "queue" as const, label: isZh ? "待办" : "Tasks" },
     { href: "/settings", key: "settings" as const, label: isZh ? "设置" : "Settings" }
   ];
 
@@ -243,42 +114,22 @@ export function CodexShell({
 
   return (
     <div
-      className={`codex-app ${keyboardOpen ? "is-keyboard-open" : ""} ${headerCollapsed ? "is-header-collapsed" : ""}`}
+      className={`codex-app codex-app--primary ${keyboardOpen ? "is-keyboard-open" : ""}`}
       style={
         {
           "--keyboard-offset": `${keyboardOffset}px`,
-          "--mobile-nav-height": keyboardOpen ? "0px" : "56px"
+          "--mobile-nav-height": keyboardOpen ? "0px" : "68px"
         } as CSSProperties
       }
     >
-      <div className="codex-main">
-        <div ref={sentinelRef} style={{ height: 0 }} />
-        <header className={`codex-page-header ${compactHeader ? "is-compact" : ""}`}>
-          <div className="codex-page-header__top">
-            {backHref ? (
-              <Link
-                className="codex-back-link"
-                href={backHref}
-                onClick={createGuardedClickHandler(backHref)}
-              >
-                <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20">
-                  <path
-                    d="M15 19l-7-7 7-7"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2.5"
-                  />
-                </svg>
-              </Link>
-            ) : null}
+      <div className="codex-main codex-main--primary">
+        <header className="codex-page-header">
+          <div className="codex-page-header__copy">
+            {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
             <h1>{title}</h1>
-            <div className="codex-page-header__actions">
-              {actions}
-            </div>
+            {subtitle ? <p className="codex-page-header__subtitle">{subtitle}</p> : null}
           </div>
-          {subtitle ? <p className="codex-page-header__subtitle">{subtitle}</p> : null}
+          <div className="codex-page-header__inline-actions">{actions}</div>
         </header>
 
         <div className="codex-page-body">{children}</div>
@@ -290,7 +141,7 @@ export function CodexShell({
             <Link
               key={item.href}
               className={`codex-tab-bar__item ${
-                isCurrentPath(pathname, item.href, item.key) ? "is-active" : ""
+                isCurrentPath(pathname, item.href) ? "is-active" : ""
               }`}
               href={item.href}
               onClick={createGuardedClickHandler(item.href)}
@@ -298,7 +149,7 @@ export function CodexShell({
               <span className="codex-tab-bar__icon">
                 <TabIcon name={item.key} />
               </span>
-              {item.key === "queue" && queueBadge > 0 ? (
+              {item.key === "projects" && queueBadge > 0 ? (
                 <span className="codex-tab-bar__badge">{queueBadge}</span>
               ) : null}
               <span className="codex-tab-bar__label">{item.label}</span>

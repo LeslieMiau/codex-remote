@@ -13,7 +13,7 @@ import {
   localize,
   useLocale
 } from "../lib/locale";
-import { CodexShell } from "./codex-shell";
+import { DetailShell } from "./detail-shell";
 import { MobileSheet } from "./mobile-sheet";
 
 interface SharedPatchReviewScreenProps {
@@ -201,7 +201,7 @@ export function SharedPatchReviewScreen({
 
   if (!timeline || !patch) {
     return (
-      <CodexShell
+      <DetailShell
         backHref={buildThreadPath(threadId)}
         eyebrow={isZh ? "变更" : "Change"}
         subtitle={
@@ -231,21 +231,19 @@ export function SharedPatchReviewScreen({
             {isZh ? "返回聊天" : "Back to chat"}
           </Link>
         </section>
-      </CodexShell>
+      </DetailShell>
     );
   }
 
   return (
-    <CodexShell
+    <DetailShell
+      backHref={buildThreadPath(threadId)}
       eyebrow={isZh ? "变更" : "Change"}
       subtitle={timeline.thread.repo_root}
       title={timeline.thread.title}
       actions={
         <div className="codex-header-cues">
           <span className="state-pill">{translatePatchStatus(locale, patch.status)}</span>
-          <Link className="chrome-button" href={buildThreadPath(threadId)}>
-            {isZh ? "返回聊天" : "Back to chat"}
-          </Link>
         </div>
       }
     >
@@ -482,6 +480,6 @@ export function SharedPatchReviewScreen({
               })}
         </p>
       </MobileSheet>
-    </CodexShell>
+    </DetailShell>
   );
 }

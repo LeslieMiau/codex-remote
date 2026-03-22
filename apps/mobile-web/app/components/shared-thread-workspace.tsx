@@ -106,7 +106,7 @@ import {
   type ThreadListRoute
 } from "../lib/thread-list-route-storage";
 import { setStoredLastActiveThread } from "../lib/thread-storage";
-import { CodexShell } from "./codex-shell";
+import { DetailShell } from "./detail-shell";
 import { MobileSheet } from "./mobile-sheet";
 
 interface SharedThreadWorkspaceProps {
@@ -269,6 +269,11 @@ function injectSkillMentions(prompt: string, skills: PendingSendSkill[]) {
   }
 
   return `${markers.join(" ")}\n${prompt}`;
+}
+
+function getRepoTail(repoRoot: string) {
+  const parts = repoRoot.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] ?? repoRoot;
 }
 
 function formatTimestamp(locale: "zh" | "en", value?: string) {
@@ -1197,6 +1202,36 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
   const hasSkillCapability = Boolean(capabilities?.skills_input);
   const leadApproval = pendingApprovals[0] ?? null;
   const leadPatch = pendingPatches[0] ?? null;
+  const headerSubtitle = error
+    ? localize(locale, {
+        zh: "有一项状态需要处理",
+        en: "There is an issue that needs attention"
+      })
+    : leadNativeRequest
+      ? `${
+          describeNativeRequestAttentionLabel(locale, leadNativeRequest.kind)
+        } · ${leadNativeRequest.title ?? translateNativeRequestKind(locale, leadNativeRequest.kind)}`
+      : leadApproval
+        ? localize(locale, {
+            zh: "等待批准后继续",
+            en: "Waiting for approval"
+          })
+        : leadPatch
+          ? localize(locale, {
+              zh: "等待完成变更审查",
+              en: "Waiting for review"
+            })
+          : isRunActive
+            ? liveActivity.title
+            : transcript
+              ? `${translateThreadState(locale, transcript.thread.state)} · ${formatTimestamp(
+                  locale,
+                  transcript.thread.updated_at
+                )}`
+              : localize(locale, {
+                  zh: "正在连接共享聊天",
+                  en: "Connecting to shared chat"
+                });
   const hasApprovalSheet = Boolean(leadApproval);
   const topStatus = error
     ? {
@@ -1987,36 +2022,21 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
   }
 
   return (
-    <CodexShell
-      backHref="/projects"
-      compactHeader
-      eyebrow={transcript?.thread.project_label ?? (isZh ? "聊天" : "Chat")}
-      subtitle={
-        transcript?.thread.repo_root ??
-        localize(locale, {
-          zh: "正在连接共享聊天",
-          en: "Connecting to shared chat"
-        })
-      }
-      title={transcript?.thread.title ?? threadId}
+    <DetailShell
       actions={
-        <div className="codex-header-cues codex-thread-toolbar">
-          <button
-            className="chrome-button"
-            onClick={() => void openThreadSwitcher()}
-            type="button"
-          >
-            {localize(locale, { zh: "最近", en: "Recent" })}
-          </button>
-          <button
-            className="chrome-button"
-            onClick={() => setMobilePanel("details")}
-            type="button"
-          >
-            {localize(locale, { zh: "信息", en: "Info" })}
-          </button>
-        </div>
+        <button
+          className="chrome-button"
+          onClick={() => setMobilePanel("details")}
+          type="button"
+        >
+          {localize(locale, { zh: "更多", en: "More" })}
+        </button>
       }
+      backHref={returnToListHref}
+      eyebrow={transcript?.thread.project_label ?? (isZh ? "聊天" : "Chat")}
+      className="codex-detail-shell--chat"
+      subtitle={headerSubtitle}
+      title={transcript?.thread.title ?? threadId}
     >
       <div
         className="codex-thread-screen"
@@ -2032,108 +2052,113 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
           </div>
         ) : null}
 
-      <div className="codex-page-stack">
-        {topStatus ? (
-          <section className={`codex-status-strip tone-${topStatus.tone}`}>
-            <div className="codex-status-strip__copy">
-              <p className="section-label">{localize(locale, { zh: "状态", en: "Status" })}</p>
-              <strong>{topStatus.title}</strong>
-              <p>{topStatus.detail}</p>
-            </div>
-            <span className="state-pill">{transportLabel(locale, transportState)}</span>
-          </section>
-        ) : null}
+        <div className="codex-page-stack codex-page-stack--detail codex-chat-page">
+          {topStatus ? (
+            <section className={`codex-status-strip tone-${topStatus.tone}`}>
+              <div className="codex-status-strip__copy">
+                <p className="section-label">{localize(locale, { zh: "状态", en: "Status" })}</p>
+                <strong>{topStatus.title}</strong>
+                <p>{topStatus.detail}</p>
+              </div>
+              <span className="state-pill">{transportLabel(locale, transportState)}</span>
+            </section>
+          ) : null}
 
-        <section className="codex-page-section">
-          <div className="codex-thread-context">
-            {leadNativeRequest ? (
-              <span
-                className={`status-dot ${
-                  isDesktopOrientedNativeRequest(leadNativeRequest.kind)
-                    ? "tone-warning"
-                    : ""
-                }`}
-              >
-                {describeNativeRequestQueueLabel(locale, leadNativeRequest.kind)}
-              </span>
-            ) : null}
-            <span className="status-dot">
-              {localize(locale, { zh: "状态", en: "Status" })}{" "}
-              {transcript
-                ? translateThreadState(locale, transcript.thread.state)
-                : localize(locale, { zh: "加载中", en: "Loading" })}
-            </span>
-            <span className="status-dot">
-              {localize(locale, { zh: "同步", en: "Sync" })} {syncStateLabel}
-            </span>
-            <span className="status-dot">
-              {localize(locale, { zh: "更新于", en: "Updated" })}{" "}
-              {transcript
-                ? formatTimestamp(locale, transcript.thread.updated_at)
-                : localize(locale, { zh: "加载中", en: "Loading" })}
-            </span>
-            {selectedModelLabel ? (
+          {transcript ? (
+            <section className="codex-thread-context codex-thread-context--inline">
               <span className="status-dot">
-                {localize(locale, { zh: "模型", en: "Model" })} {selectedModelLabel}
+                {translateThreadState(locale, transcript.thread.state)}
               </span>
-            ) : null}
-            {sharedSettings?.model_reasoning_effort ? (
               <span className="status-dot">
-                {localize(locale, { zh: "推理", en: "Reasoning" })}{" "}
-                {sharedSettings.model_reasoning_effort}
+                {localize(locale, { zh: "同步", en: "Sync" })} {syncStateLabel}
               </span>
-            ) : null}
-          </div>
-        </section>
-
-        <section className="codex-status-area">
-          <article
-            className={`codex-task-card tone-${activeTask.tone} ${
-              leadNativeRequest &&
-              isDesktopOrientedNativeRequest(leadNativeRequest.kind)
-                ? "is-desktop-recovery"
-                : ""
-            }`}
-          >
-            <div className="codex-task-card__copy">
-              <p className="section-label">{activeTask.label}</p>
-              <strong>{activeTask.title}</strong>
-              <p>{activeTask.detail}</p>
-            </div>
-
-            <div className="codex-task-card__actions">
-              {leadNativeRequest ? (
-                <button
-                  className="secondary-button"
-                  onClick={openNativeRequestSheet}
-                  type="button"
-                >
-                  {describeNativeRequestActionLabel(locale, leadNativeRequest.kind)}
-                </button>
-              ) : !leadApproval && !leadPatch && isRunActive ? (
-                <button
-                  className="secondary-button"
-                  disabled={isMutating || !capabilities?.interrupt}
-                  onClick={() => void handleInterrupt()}
-                  type="button"
-                >
-                  {localize(locale, { zh: "停止", en: "Stop" })}
-                </button>
+              <span className="status-dot">{getRepoTail(transcript.thread.repo_root)}</span>
+              {selectedModelLabel ? (
+                <span className="status-dot">
+                  {localize(locale, { zh: "模型", en: "Model" })} {selectedModelLabel}
+                </span>
               ) : null}
-            </div>
-          </article>
-        </section>
+              {sharedSettings?.model_reasoning_effort ? (
+                <span className="status-dot">
+                  {localize(locale, { zh: "推理", en: "Reasoning" })}{" "}
+                  {sharedSettings.model_reasoning_effort}
+                </span>
+              ) : null}
+            </section>
+          ) : null}
 
-        <section className="codex-thread-layout codex-thread-layout--chat">
-          <div className="codex-timeline-column">
-            <section className="codex-chat-section">
-              <div className="codex-section__header">
-                <div>
-                  <p className="section-label">
-                    {localize(locale, { zh: "消息", en: "Messages" })}
-                  </p>
-                  <h2>{localize(locale, { zh: "聊天记录", en: "Chat history" })}</h2>
-                </div>
+          {liveResponse && showLivePanel ? (
+            <article className={`codex-chat-activity-card tone-${liveResponseTone}`}>
+              <div className="codex-chat-activity-card__copy">
+                <p className="section-label">
+                  {localize(locale, { zh: "实时状态", en: "Live activity" })}
+                </p>
+                <strong>
+                  {liveResponse.awaiting_native_commit
+                    ? localize(locale, {
+                        zh: "等待原生确认",
+                        en: "Waiting for native confirmation"
+                      })
+                    : localize(locale, {
+                        zh: "Codex 正在继续这条聊天",
+                        en: "Codex is continuing this chat"
+                      })}
+                </strong>
+                <p>{renderLivePanelBody(locale, liveResponse, Boolean(liveDraftMessage))}</p>
+              </div>
+              <div className="codex-chat-activity-card__meta">
+                <span className="state-pill">
+                  {translateLiveStateStatus(locale, liveResponse)}
+                </span>
+                <span className="status-dot">
+                  {formatTimestamp(locale, liveResponse.updated_at)}
+                </span>
+              </div>
+              {liveResponse.details.length > 0 ? (
+                <details className="codex-message-details codex-chat-activity-card__details">
+                  <summary>
+                    {localize(locale, {
+                      zh: `查看过程与读取 (${liveResponse.details.length})`,
+                      en: `Show process and reads (${liveResponse.details.length})`
+                    })}
+                  </summary>
+                  <div className="codex-message-details__list">
+                    {liveResponse.details.map((detail) => (
+                      <details key={detail.detail_id} className="codex-detail-disclosure">
+                        <summary>
+                          <span>{translateDetailKind(locale, detail.kind)}</span>
+                          <strong>{detail.title}</strong>
+                          <span>{formatTimestamp(locale, detail.timestamp)}</span>
+                        </summary>
+                        {detail.body ? (
+                          detail.mono ? (
+                            <pre className="codex-mono-block">{detail.body}</pre>
+                          ) : (
+                            <p className="codex-detail-body">{detail.body}</p>
+                          )
+                        ) : null}
+                      </details>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
+            </article>
+          ) : null}
+
+          <section className="codex-chat-section codex-chat-section--surface">
+            <div className="codex-section__header codex-chat-section__header">
+              <div>
+                <p className="section-label">
+                  {localize(locale, { zh: "消息", en: "Messages" })}
+                </p>
+                <h2>{localize(locale, { zh: "聊天记录", en: "Conversation" })}</h2>
+              </div>
+              <div className="codex-chat-section__actions">
+                {isRefreshing ? (
+                  <span className="status-dot">
+                    {localize(locale, { zh: "同步中", en: "Syncing" })}
+                  </span>
+                ) : null}
                 {transcript?.has_more ? (
                   <button
                     className="secondary-button"
@@ -2147,70 +2172,9 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                   </button>
                 ) : null}
               </div>
+            </div>
 
-              {liveResponse && showLivePanel ? (
-                <article className={`codex-live-panel tone-${liveResponseTone}`}>
-                  <div className="codex-live-panel__header">
-                    <div className="codex-live-panel__copy">
-                      <p className="section-label">
-                        {localize(locale, { zh: "实时回复", en: "Live response" })}
-                      </p>
-                      <strong>
-                        {liveResponse.awaiting_native_commit
-                          ? localize(locale, {
-                              zh: "等待原生 Codex 聊天记录确认",
-                              en: "Waiting for native Codex confirmation"
-                            })
-                          : localize(locale, {
-                              zh: "Codex 正在实时更新",
-                              en: "Codex is updating live"
-                            })}
-                      </strong>
-                      <p>{renderLivePanelBody(locale, liveResponse, Boolean(liveDraftMessage))}</p>
-                    </div>
-                    <div className="codex-live-panel__meta">
-                      <span className="state-pill">
-                        {translateLiveStateStatus(locale, liveResponse)}
-                      </span>
-                      <span className="status-dot">
-                        {formatTimestamp(locale, liveResponse.updated_at)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {liveResponse.awaiting_native_commit ? (
-                    <p className="codex-inline-note">
-                      {localize(locale, {
-                        zh: "正式消息仍然只会在原生 Codex 聊天记录确认后进入下面的对话。",
-                        en: "The chat below updates only after native Codex confirms the official message."
-                      })}
-                    </p>
-                  ) : null}
-
-                  {liveResponse.details.length > 0 ? (
-                    <div className="codex-live-panel__details">
-                      {liveResponse.details.map((detail) => (
-                        <details key={detail.detail_id} className="codex-detail-disclosure">
-                          <summary>
-                            <span>{translateDetailKind(locale, detail.kind)}</span>
-                            <strong>{detail.title}</strong>
-                            <span>{formatTimestamp(locale, detail.timestamp)}</span>
-                          </summary>
-                          {detail.body ? (
-                            detail.mono ? (
-                              <pre className="codex-mono-block">{detail.body}</pre>
-                            ) : (
-                              <p className="codex-detail-body">{detail.body}</p>
-                            )
-                          ) : null}
-                        </details>
-                      ))}
-                    </div>
-                  ) : null}
-                </article>
-              ) : null}
-
-              <div className="codex-chat-list">
+            <div className="codex-chat-list">
                 {displayMessages.map((message) => (
                   <article
                     key={message.message_id}
@@ -2355,11 +2319,9 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                   </div>
                 ) : null}
                 <div ref={timelineBottomRef} />
-              </div>
-            </section>
-          </div>
-        </section>
-      </div>
+            </div>
+          </section>
+        </div>
 
       <MobileSheet
         eyebrow={localize(locale, { zh: "聊天", en: "Chats" })}
@@ -2592,6 +2554,13 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
           <article className="codex-side-item">
             <strong>{localize(locale, { zh: "快捷操作", en: "Quick actions" })}</strong>
             <div className="feed-actions">
+              <button
+                className="secondary-button"
+                onClick={() => void openThreadSwitcher()}
+                type="button"
+              >
+                {localize(locale, { zh: "最近聊天", en: "Recent chats" })}
+              </button>
               <button
                 className="secondary-button"
                 disabled={isMutating || isLoading}
@@ -3202,6 +3171,6 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
         ) : null}
         </MobileSheet>
       </div>
-    </CodexShell>
+    </DetailShell>
   );
 }

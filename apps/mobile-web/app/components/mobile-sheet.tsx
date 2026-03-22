@@ -9,6 +9,7 @@ interface MobileSheetProps {
   disableDismiss?: boolean;
   eyebrow?: string;
   footer?: ReactNode;
+  fullHeight?: boolean;
   open: boolean;
   onClose(): void;
   title: string;
@@ -38,6 +39,7 @@ export function MobileSheet({
   disableDismiss = false,
   eyebrow,
   footer,
+  fullHeight = true,
   open,
   onClose,
   title
@@ -161,7 +163,7 @@ export function MobileSheet({
       <section
         aria-modal="true"
         aria-labelledby={titleId}
-        className="sheet codex-mobile-sheet__dialog"
+        className={`sheet codex-mobile-sheet__dialog ${fullHeight ? "is-full-height" : ""}`}
         onClick={(event) => event.stopPropagation()}
         ref={dialogRef}
         role="dialog"
@@ -197,7 +199,7 @@ export function MobileSheet({
 
         <div className="codex-mobile-sheet__content">{children}</div>
 
-        {footer ? <div className="sheet-actions">{footer}</div> : null}
+        {footer ? <div className="sheet-actions codex-mobile-sheet__footer">{footer}</div> : null}
       </section>
     </div>
   );

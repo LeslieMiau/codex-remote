@@ -8,10 +8,11 @@
     "pnpm": ">=10.0.0"
   },
   "scripts": {
-    "build": "pnpm -r build",
-    "check": "pnpm -r check",
-    "test": "pnpm -r test",
+    "build": "corepack pnpm -r build",
+    "check": "corepack pnpm -r check",
+    "test": "corepack pnpm -r test",
     "stack:prepare-host": "./scripts/configure-host-network.sh",
+    "stack:start": "./scripts/start-stack.sh",
     "stack:start:gateway": "./scripts/start-gateway.sh",
     "stack:start:web": "./scripts/start-mobile-web.sh",
     "stack:publish": "./scripts/publish-tailscale.sh",

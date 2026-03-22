@@ -1,2 +1,4 @@
 #!/bin/sh
-pnpm --filter @codex-remote/mobile-web dev "$@"
+set -eu
+
+exec corepack pnpm --filter @codex-remote/mobile-web dev "$@"

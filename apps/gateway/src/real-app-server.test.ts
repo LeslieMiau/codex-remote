@@ -254,6 +254,19 @@ describe("real-app-server smoke", () => {
       );
 
       const encodedThreadId = encodeURIComponent(createdThreadId);
+      const archiveResponse = await runtime.app.inject({
+        method: "POST",
+        payload: {
+          actor_id: "smoke",
+          request_id: "real-smoke-archive-pending"
+        },
+        url: `/threads/${encodedThreadId}/archive`
+      });
+      expect(archiveResponse.statusCode).toBe(409);
+      expect(archiveResponse.json()).toMatchObject({
+        error: "thread_sync_pending"
+      });
+
       const renameResponse = await runtime.app.inject({
         method: "POST",
         payload: {

@@ -711,6 +711,13 @@ function reconcilePendingSends(
 }
 
 function describeActionError(locale: "zh" | "en", error: unknown) {
+  if (error instanceof GatewayRequestError && error.code === "thread_sync_pending") {
+    return localize(locale, {
+      zh: "这条聊天还在等待原生 Codex 同步，稍后再试这些线程操作。",
+      en: "This chat is still waiting for native Codex sync. Try those thread actions again in a moment."
+    });
+  }
+
   if (error instanceof GatewayRequestError && error.code === "native_approval_unrecoverable") {
     return localize(locale, {
       zh: "这个请求和原生 Codex 的连接已经丢失，请回到桌面端重新打开聊天后再处理。",
@@ -1142,6 +1149,10 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
   );
   const liveActivity = deriveLiveActivity(locale, transcript, transportState, eventActivity);
   const syncStateLabel = translateSyncState(locale, transcript?.thread.sync_state);
+  const remoteThreadActionsBlocked = Boolean(
+    transcript &&
+      (!transcript.thread.adapter_thread_ref || transcript.thread.sync_state === "sync_pending")
+  );
   const selectedModelLabel =
     sharedSettings?.available_models.find((option) => option.slug === sharedSettings.model)
       ?.display_name ?? sharedSettings?.model ?? null;
@@ -2410,7 +2421,9 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
             <div className="feed-actions">
               <button
                 className="secondary-button"
-                disabled={isMutating || !capabilities?.thread_archive}
+                disabled={
+                  isMutating || !capabilities?.thread_archive || remoteThreadActionsBlocked
+                }
                 onClick={() => void handleArchiveToggle()}
                 type="button"
               >
@@ -2420,7 +2433,9 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
               </button>
               <button
                 className="secondary-button"
-                disabled={isMutating || !capabilities?.thread_compact}
+                disabled={
+                  isMutating || !capabilities?.thread_compact || remoteThreadActionsBlocked
+                }
                 onClick={() => void handleCompactThread()}
                 type="button"
               >
@@ -2428,7 +2443,9 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
               </button>
               <button
                 className="secondary-button"
-                disabled={isMutating || !capabilities?.thread_fork}
+                disabled={
+                  isMutating || !capabilities?.thread_fork || remoteThreadActionsBlocked
+                }
                 onClick={() => void handleForkThread()}
                 type="button"
               >
@@ -2436,7 +2453,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
               </button>
               <button
                 className="secondary-button"
-                disabled={isMutating || !capabilities?.review_start}
+                disabled={isMutating || !capabilities?.review_start || remoteThreadActionsBlocked}
                 onClick={() => void handleStartReview()}
                 type="button"
               >
@@ -2448,7 +2465,9 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                 <span>{localize(locale, { zh: "回滚轮数", en: "Rollback turns" })}</span>
                 <input
                   className="chrome-input"
-                  disabled={isMutating || !capabilities?.thread_rollback}
+                  disabled={
+                    isMutating || !capabilities?.thread_rollback || remoteThreadActionsBlocked
+                  }
                   inputMode="numeric"
                   min="1"
                   onChange={(event) => setRollbackTurnsDraft(event.target.value)}
@@ -2458,13 +2477,23 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
               <div className="feed-actions">
                 <button
                   className="danger-button"
-                  disabled={isMutating || !capabilities?.thread_rollback}
+                  disabled={
+                    isMutating || !capabilities?.thread_rollback || remoteThreadActionsBlocked
+                  }
                   onClick={() => void handleRollbackThread()}
                   type="button"
                 >
                   {localize(locale, { zh: "回滚聊天", en: "Rollback chat" })}
                 </button>
               </div>
+              {remoteThreadActionsBlocked ? (
+                <p className="codex-inline-note">
+                  {localize(locale, {
+                    zh: "这条聊天还在等待进入原生 Codex 时间线，归档、分支、review 和回滚等操作会在同步完成后开放。",
+                    en: "This chat is still entering the native Codex timeline. Archive, fork, review, and rollback open up after sync finishes."
+                  })}
+                </p>
+              ) : null}
             </div>
           </article>
 

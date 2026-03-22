@@ -245,6 +245,17 @@ function localThreadActionConflict(store: GatewayStore, threadId: string) {
   return null;
 }
 
+function requiresMaterializedSharedThreadControl(thread: CodexThread) {
+  return !thread.adapter_thread_ref || thread.sync_state === "sync_pending";
+}
+
+function sendThreadSyncPending(reply: FastifyReply) {
+  reply.code(409);
+  return {
+    error: "thread_sync_pending"
+  };
+}
+
 function fallbackThreadFromStore(store: GatewayStore, threadId: string): CodexThread | null {
   const thread = store.getThread(threadId) ?? store.findThreadByAdapterRef(threadId);
   if (!thread) {
@@ -1460,6 +1471,10 @@ export async function createGatewayServer(
         };
       }
 
+      if (requiresMaterializedSharedThreadControl(thread)) {
+        return sendThreadSyncPending(reply);
+      }
+
       await commandBridge.archiveSharedThread({
         threadId: thread.adapter_thread_ref ?? thread.thread_id
       });
@@ -1509,6 +1524,10 @@ export async function createGatewayServer(
         return {
           error: "unknown_thread"
         };
+      }
+
+      if (requiresMaterializedSharedThreadControl(thread)) {
+        return sendThreadSyncPending(reply);
       }
 
       await commandBridge.unarchiveSharedThread({
@@ -1562,6 +1581,10 @@ export async function createGatewayServer(
         };
       }
 
+      if (requiresMaterializedSharedThreadControl(thread)) {
+        return sendThreadSyncPending(reply);
+      }
+
       await commandBridge.compactSharedThread({
         threadId: thread.adapter_thread_ref ?? thread.thread_id
       });
@@ -1610,6 +1633,10 @@ export async function createGatewayServer(
         return {
           error: "unknown_thread"
         };
+      }
+
+      if (requiresMaterializedSharedThreadControl(thread)) {
+        return sendThreadSyncPending(reply);
       }
 
       const forked = await commandBridge.forkSharedThread({
@@ -1680,6 +1707,10 @@ export async function createGatewayServer(
         };
       }
 
+      if (requiresMaterializedSharedThreadControl(thread)) {
+        return sendThreadSyncPending(reply);
+      }
+
       await commandBridge.rollbackSharedThread({
         threadId: thread.adapter_thread_ref ?? thread.thread_id,
         numTurns: command.num_turns
@@ -1724,6 +1755,10 @@ export async function createGatewayServer(
         return {
           error: "unknown_thread"
         };
+      }
+
+      if (requiresMaterializedSharedThreadControl(thread)) {
+        return sendThreadSyncPending(reply);
       }
 
       const started = await commandBridge.startReview({

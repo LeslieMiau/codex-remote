@@ -458,6 +458,37 @@ describe("gateway server", () => {
     ).toBe(true);
   });
 
+  it("returns a sync-pending conflict for remote-only thread actions on freshly started shared chats", async () => {
+    const { repoRoot, runtime } = await createRuntime();
+
+    const createShared = await runtime.app.inject({
+      method: "POST",
+      url: "/threads/shared",
+      payload: {
+        actor_id: "phone",
+        request_id: "sync-pending-shared-create",
+        repo_root: repoRoot,
+        prompt: "Reply with exactly OK and nothing else."
+      }
+    });
+    expect(createShared.statusCode).toBe(200);
+
+    const threadId = createShared.json().thread.thread_id as string;
+    const archiveResponse = await runtime.app.inject({
+      method: "POST",
+      url: `/threads/${threadId}/archive`,
+      payload: {
+        actor_id: "phone",
+        request_id: "sync-pending-archive"
+      }
+    });
+
+    expect(archiveResponse.statusCode).toBe(409);
+    expect(archiveResponse.json()).toMatchObject({
+      error: "thread_sync_pending"
+    });
+  });
+
   it("interrupts an active shared run", async () => {
     const { repoRoot, runtime } = await createRuntime();
 

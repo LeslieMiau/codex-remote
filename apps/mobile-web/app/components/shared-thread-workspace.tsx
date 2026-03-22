@@ -72,7 +72,12 @@ import {
   translateThreadState,
   useLocale
 } from "../lib/locale";
-import { describeNativeRequestGateBody } from "../lib/native-input-copy";
+import {
+  describeNativeRequestActionLabel,
+  describeNativeRequestGateBody,
+  describeNativeRequestRecoveryNotice,
+  describeNativeRequestTaskDetail
+} from "../lib/native-input-copy";
 import {
   applyEventToLiveState,
   mergeMessages,
@@ -1220,11 +1225,11 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
   const activeTask = leadNativeRequest
     ? {
         detail:
-          leadNativeRequest.prompt ??
-          localize(locale, {
-            zh: "Codex 正在等待你补充输入。",
-            en: "Codex is waiting for your input."
-          }),
+          describeNativeRequestTaskDetail(
+            locale,
+            leadNativeRequest.kind,
+            leadNativeRequest.prompt
+          ),
         label: localize(locale, { zh: "当前状态", en: "Current activity" }),
         title:
           leadNativeRequest.title ??
@@ -2062,7 +2067,15 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
             </div>
 
             <div className="codex-task-card__actions">
-              {!leadNativeRequest && !leadApproval && !leadPatch && isRunActive ? (
+              {leadNativeRequest ? (
+                <button
+                  className="secondary-button"
+                  onClick={openNativeRequestSheet}
+                  type="button"
+                >
+                  {describeNativeRequestActionLabel(locale, leadNativeRequest.kind)}
+                </button>
+              ) : !leadApproval && !leadPatch && isRunActive ? (
                 <button
                   className="secondary-button"
                   disabled={isMutating || !capabilities?.interrupt}
@@ -2637,9 +2650,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
               </p>
             </div>
             <button className="secondary-button" onClick={openNativeRequestSheet} type="button">
-              {leadNativeRequest.kind === "user_input"
-                ? localize(locale, { zh: "处理输入", en: "Open input request" })
-                : localize(locale, { zh: "查看请求", en: "Open request" })}
+              {describeNativeRequestActionLabel(locale, leadNativeRequest.kind)}
             </button>
           </div>
         ) : leadApproval ? (
@@ -2892,6 +2903,22 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
       >
         {leadNativeRequest ? (
           <div className="codex-side-list">
+            {leadNativeRequest.kind !== "user_input" ? (
+              <section className="codex-status-strip codex-status-strip--stacked tone-warning">
+                <div className="codex-status-strip__copy">
+                  <p className="section-label">
+                    {localize(locale, { zh: "恢复引导", en: "Recovery guidance" })}
+                  </p>
+                  <strong>
+                    {describeNativeRequestRecoveryNotice(locale, leadNativeRequest.kind).title}
+                  </strong>
+                  <p>
+                    {describeNativeRequestRecoveryNotice(locale, leadNativeRequest.kind).body}
+                  </p>
+                </div>
+              </section>
+            ) : null}
+
             <article className="codex-side-item">
               <p className="section-label">{localize(locale, { zh: "类型", en: "Kind" })}</p>
               <strong>{leadNativeRequest.title ?? translateNativeRequestKind(locale, leadNativeRequest.kind)}</strong>

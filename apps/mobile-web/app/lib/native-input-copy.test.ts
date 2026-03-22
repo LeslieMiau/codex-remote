@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  describeNativeRequestActionLabel,
+  describeNativeRequestRecoveryNotice,
+  describeNativeRequestTaskDetail,
   describeNativeRequestGateBody,
   describePendingInputSummary
 } from "./native-input-copy";
@@ -35,6 +38,35 @@ describe("describeNativeRequestGateBody", () => {
     );
     expect(describeNativeRequestGateBody("en", "auth_refresh", 1)).toContain(
       "finish authentication in desktop Codex app"
+    );
+  });
+});
+
+describe("native request recovery helpers", () => {
+  it("uses stronger task detail for desktop-oriented requests", () => {
+    expect(
+      describeNativeRequestTaskDetail("en", "dynamic_tool", "Tool access is required.")
+    ).toContain("desktop Codex app");
+    expect(describeNativeRequestTaskDetail("zh", "auth_refresh")).toContain(
+      "桌面 Codex app"
+    );
+  });
+
+  it("switches action labels by request kind", () => {
+    expect(describeNativeRequestActionLabel("en", "user_input")).toBe(
+      "Open input request"
+    );
+    expect(describeNativeRequestActionLabel("zh", "dynamic_tool")).toBe(
+      "查看恢复步骤"
+    );
+  });
+
+  it("returns recovery notices for desktop-oriented requests", () => {
+    expect(describeNativeRequestRecoveryNotice("en", "dynamic_tool").title).toContain(
+      "continue on desktop"
+    );
+    expect(describeNativeRequestRecoveryNotice("zh", "auth_refresh").body).toContain(
+      "认证刷新"
     );
   });
 });

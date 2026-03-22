@@ -126,6 +126,23 @@ async function createRuntime() {
   };
 }
 
+async function waitForSharedThreadControlReady(
+  runtime: GatewayRuntime,
+  threadId: string,
+  timeoutMs: number
+) {
+  return waitFor(
+    () => runtime.bridge.getThread(threadId),
+    (thread) =>
+      Boolean(
+        thread?.adapter_thread_ref &&
+          thread.sync_state !== "sync_pending" &&
+          thread.sync_state !== "sync_failed"
+      ),
+    timeoutMs
+  );
+}
+
 afterEach(async () => {
   while (runtimes.length > 0) {
     const runtime = runtimes.pop();
@@ -289,6 +306,123 @@ describe("real-app-server smoke", () => {
           .json()
           .threads.some((thread: { thread_id: string }) => thread.thread_id === createdThreadId)
       ).toBe(true);
+    },
+    config.timeoutMs
+  );
+
+  it(
+    "archives, restores, and forks a materialized shared thread",
+    async () => {
+      const { runtime, repoRoot } = await createRuntime();
+
+      const createShared = await runtime.app.inject({
+        method: "POST",
+        payload: {
+          actor_id: "smoke",
+          repo_root: repoRoot,
+          request_id: "real-smoke-thread-controls",
+          prompt: "Reply with exactly OK and nothing else."
+        },
+        url: "/threads/shared"
+      });
+      expect(createShared.statusCode).toBe(200);
+
+      const createdThreadId = createShared.json().thread.thread_id as string;
+      const readyThread = await waitForSharedThreadControlReady(
+        runtime,
+        createdThreadId,
+        config.timeoutMs
+      );
+      expect(readyThread?.thread_id).toBe(createdThreadId);
+      expect(readyThread?.adapter_thread_ref).toBeTruthy();
+
+      const encodedThreadId = encodeURIComponent(createdThreadId);
+
+      const archiveResponse = await runtime.app.inject({
+        method: "POST",
+        payload: {
+          actor_id: "smoke",
+          request_id: "real-smoke-archive-ready"
+        },
+        url: `/threads/${encodedThreadId}/archive`
+      });
+      expect(archiveResponse.statusCode).toBe(200);
+      expect(archiveResponse.json()).toMatchObject({
+        thread: {
+          thread_id: createdThreadId,
+          archived: true,
+          state: "archived"
+        }
+      });
+
+      const activeOverviewResponse = await runtime.app.inject({
+        method: "GET",
+        url: "/overview"
+      });
+      expect(activeOverviewResponse.statusCode).toBe(200);
+      expect(
+        activeOverviewResponse
+          .json()
+          .threads.some((thread: { thread_id: string }) => thread.thread_id === createdThreadId)
+      ).toBe(false);
+
+      const archivedOverviewResponse = await runtime.app.inject({
+        method: "GET",
+        url: "/overview?include_archived=1"
+      });
+      expect(archivedOverviewResponse.statusCode).toBe(200);
+      expect(
+        archivedOverviewResponse
+          .json()
+          .threads.some(
+            (thread: { archived: boolean; state: string; thread_id: string }) =>
+              thread.thread_id === createdThreadId &&
+              thread.archived === true &&
+              thread.state === "archived"
+          )
+      ).toBe(true);
+
+      const unarchiveResponse = await runtime.app.inject({
+        method: "POST",
+        payload: {
+          actor_id: "smoke",
+          request_id: "real-smoke-unarchive-ready"
+        },
+        url: `/threads/${encodedThreadId}/unarchive`
+      });
+      expect(unarchiveResponse.statusCode).toBe(200);
+      expect(unarchiveResponse.json()).toMatchObject({
+        thread: {
+          thread_id: createdThreadId,
+          archived: false
+        }
+      });
+
+      const restoredOverview = await waitFor(
+        async () =>
+          runtime.app.inject({
+            method: "GET",
+            url: "/overview"
+          }),
+        (response) =>
+          response
+            .json()
+            .threads.some((thread: { thread_id: string }) => thread.thread_id === createdThreadId),
+        config.timeoutMs
+      );
+      expect(restoredOverview.statusCode).toBe(200);
+
+      const forkResponse = await runtime.app.inject({
+        method: "POST",
+        payload: {
+          actor_id: "smoke",
+          request_id: "real-smoke-fork-ready"
+        },
+        url: `/threads/${encodedThreadId}/fork`
+      });
+      expect(forkResponse.statusCode).toBe(200);
+      expect(forkResponse.json().thread.thread_id).toBeTruthy();
+      expect(forkResponse.json().thread.thread_id).not.toBe(createdThreadId);
     },
     config.timeoutMs
   );

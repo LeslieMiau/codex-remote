@@ -101,6 +101,10 @@ import {
   type PendingSendSkill,
   type PendingSendState
 } from "../lib/pending-send";
+import {
+  getStoredThreadListRoute,
+  type ThreadListRoute
+} from "../lib/thread-list-route-storage";
 import { setStoredLastActiveThread } from "../lib/thread-storage";
 import { CodexShell } from "./codex-shell";
 import { MobileSheet } from "./mobile-sheet";
@@ -793,6 +797,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
   const [isLoadingThreads, setIsLoadingThreads] = useState(false);
   const [threadSwitcherError, setThreadSwitcherError] = useState<string | null>(null);
   const [composerReserve, setComposerReserve] = useState(220);
+  const [returnToListHref, setReturnToListHref] = useState<ThreadListRoute>("/projects");
   const inFlightRef = useRef(false);
   const timelineBottomRef = useRef<HTMLDivElement | null>(null);
   const refreshTimerRef = useRef<number | null>(null);
@@ -813,6 +818,10 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
 
   useEffect(() => {
     setStoredLastActiveThread(threadId);
+  }, [threadId]);
+
+  useEffect(() => {
+    setReturnToListHref(getStoredThreadListRoute());
   }, [threadId]);
 
   useEffect(() => {
@@ -1177,6 +1186,10 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
     transcript &&
       (!transcript.thread.adapter_thread_ref || transcript.thread.sync_state === "sync_pending")
   );
+  const returnToListLabel =
+    returnToListHref === "/queue"
+      ? localize(locale, { zh: "返回收件箱", en: "Back to inbox" })
+      : localize(locale, { zh: "打开聊天列表", en: "Open chats" });
   const selectedModelLabel =
     sharedSettings?.available_models.find((option) => option.slug === sharedSettings.model)
       ?.display_name ?? sharedSettings?.model ?? null;
@@ -2351,8 +2364,8 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
       <MobileSheet
         eyebrow={localize(locale, { zh: "聊天", en: "Chats" })}
         footer={
-          <Link className="secondary-button" href="/projects" onClick={() => setMobilePanel(null)}>
-            {localize(locale, { zh: "打开聊天列表", en: "Open chats" })}
+          <Link className="secondary-button" href={returnToListHref} onClick={() => setMobilePanel(null)}>
+            {returnToListLabel}
           </Link>
         }
         open={mobilePanel === "threads"}
@@ -2595,8 +2608,8 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
               >
                 {localize(locale, { zh: "选择技能", en: "Pick skills" })}
               </button>
-              <Link className="chrome-button" href="/projects" onClick={() => setMobilePanel(null)}>
-                {localize(locale, { zh: "打开聊天列表", en: "Open chats" })}
+              <Link className="chrome-button" href={returnToListHref} onClick={() => setMobilePanel(null)}>
+                {returnToListLabel}
               </Link>
             </div>
           </article>

@@ -12,6 +12,7 @@ import {
   setStoredInputFocusFilter,
   type InputFocusFilter
 } from "../lib/input-focus-storage";
+import { setStoredThreadListRoute } from "../lib/thread-list-route-storage";
 import {
   formatDateTime,
   localize,
@@ -138,6 +139,10 @@ export function QueueScreen() {
     getStoredInputFocusFilter()
   );
   const inFlightRef = useRef(false);
+
+  useEffect(() => {
+    setStoredThreadListRoute("/queue");
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -310,7 +315,10 @@ export function QueueScreen() {
         key={entry.entry_id}
         className={`codex-focus-item ${isDesktopRecoveryInputEntry(entry) ? "is-desktop-recovery" : ""}`}
         href={buildQueueHref(entry)}
-        onClick={() => setStoredLastActiveThread(entry.thread_id)}
+        onClick={() => {
+          setStoredThreadListRoute("/queue");
+          setStoredLastActiveThread(entry.thread_id);
+        }}
       >
         <div className="codex-chat-row">
           <div className="codex-chat-avatar">{getAvatarLabel(entry.title)}</div>
@@ -422,7 +430,10 @@ export function QueueScreen() {
             <Link
               className="primary-button"
               href={buildQueueHref(leadDesktopRecoveryEntry)}
-              onClick={() => setStoredLastActiveThread(leadDesktopRecoveryEntry.thread_id)}
+              onClick={() => {
+                setStoredThreadListRoute("/queue");
+                setStoredLastActiveThread(leadDesktopRecoveryEntry.thread_id);
+              }}
             >
               {desktopRecoverySummary.cta}
             </Link>
@@ -439,7 +450,10 @@ export function QueueScreen() {
             <Link
               className="secondary-button"
               href={buildQueueHref(leadReplyableEntry)}
-              onClick={() => setStoredLastActiveThread(leadReplyableEntry.thread_id)}
+              onClick={() => {
+                setStoredThreadListRoute("/queue");
+                setStoredLastActiveThread(leadReplyableEntry.thread_id);
+              }}
             >
               {replyableSummary.cta}
             </Link>
@@ -671,7 +685,10 @@ export function QueueScreen() {
                           : ""
                       }`}
                       href={buildQueueHref(entry)}
-                      onClick={() => setStoredLastActiveThread(entry.thread_id)}
+                      onClick={() => {
+                        setStoredThreadListRoute("/queue");
+                        setStoredLastActiveThread(entry.thread_id);
+                      }}
                     >
                       <div className="codex-chat-row">
                         <div className="codex-chat-avatar">{getAvatarLabel(entry.title)}</div>

@@ -36,6 +36,7 @@ import {
   setStoredInputFocusFilter,
   type InputFocusFilter
 } from "../lib/input-focus-storage";
+import { setStoredThreadListRoute } from "../lib/thread-list-route-storage";
 import {
   describeNativeRequestActionLabel,
   describeNativeRequestAttentionLabel,
@@ -252,6 +253,10 @@ export function OverviewScreen() {
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
   const [lastSuccessfulSyncAt, setLastSuccessfulSyncAt] = useState<string | null>(null);
   const inFlightRef = useRef(false);
+
+  useEffect(() => {
+    setStoredThreadListRoute("/projects");
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -520,6 +525,7 @@ export function OverviewScreen() {
         repoRoot: input.repoRoot,
         prompt: input.prompt
       });
+      setStoredThreadListRoute("/projects");
       setStoredLastActiveThread(created.thread.thread_id);
       setIsNewThreadOpen(false);
       router.push(buildThreadPath(created.thread.thread_id));
@@ -536,7 +542,10 @@ export function OverviewScreen() {
         key={entry.entry_id}
         className={`codex-focus-item ${isDesktopRecoveryInputEntry(entry) ? "is-desktop-recovery" : ""}`}
         href={buildActionHref(entry)}
-        onClick={() => setStoredLastActiveThread(entry.thread_id)}
+        onClick={() => {
+          setStoredThreadListRoute("/projects");
+          setStoredLastActiveThread(entry.thread_id);
+        }}
       >
         <div className="codex-chat-row">
           <div className="codex-chat-avatar">{getAvatarLabel(entry.title)}</div>
@@ -672,7 +681,10 @@ export function OverviewScreen() {
               <Link
                 className="primary-button"
                 href={buildThreadPath(leadDesktopRecoveryEntry.thread_id)}
-                onClick={() => setStoredLastActiveThread(leadDesktopRecoveryEntry.thread_id)}
+                onClick={() => {
+                  setStoredThreadListRoute("/projects");
+                  setStoredLastActiveThread(leadDesktopRecoveryEntry.thread_id);
+                }}
               >
                 {desktopRecoverySummary.cta}
               </Link>
@@ -689,7 +701,10 @@ export function OverviewScreen() {
               <Link
                 className="secondary-button"
                 href={buildThreadPath(leadReplyableEntry.thread_id)}
-                onClick={() => setStoredLastActiveThread(leadReplyableEntry.thread_id)}
+                onClick={() => {
+                  setStoredThreadListRoute("/projects");
+                  setStoredLastActiveThread(leadReplyableEntry.thread_id);
+                }}
               >
                 {replyableSummary.cta}
               </Link>
@@ -791,7 +806,10 @@ export function OverviewScreen() {
                         )
                       : buildThreadPath(topPriorityEntry.thread_id)
                   }
-                  onClick={() => setStoredLastActiveThread(topPriorityEntry.thread_id)}
+                  onClick={() => {
+                    setStoredThreadListRoute("/projects");
+                    setStoredLastActiveThread(topPriorityEntry.thread_id);
+                  }}
                 >
                   {topPriorityEntry.kind === "input"
                     ? describeNativeRequestActionLabel(
@@ -804,7 +822,10 @@ export function OverviewScreen() {
                 <Link
                   className="primary-button"
                   href={buildThreadPath(latestThread.thread_id)}
-                  onClick={() => setStoredLastActiveThread(latestThread.thread_id)}
+                  onClick={() => {
+                    setStoredThreadListRoute("/projects");
+                    setStoredLastActiveThread(latestThread.thread_id);
+                  }}
                 >
                   {isZh ? "继续聊天" : "Continue chat"}
                 </Link>
@@ -1074,7 +1095,10 @@ export function OverviewScreen() {
                           : ""
                     }`}
                     href={buildThreadPath(thread.thread_id)}
-                    onClick={() => setStoredLastActiveThread(thread.thread_id)}
+                    onClick={() => {
+                      setStoredThreadListRoute("/projects");
+                      setStoredLastActiveThread(thread.thread_id);
+                    }}
                   >
                     <div className="codex-chat-row">
                       <div className="codex-chat-avatar">
@@ -1203,7 +1227,10 @@ export function OverviewScreen() {
                                 : ""
                           }`}
                           href={buildThreadPath(thread.thread_id)}
-                          onClick={() => setStoredLastActiveThread(thread.thread_id)}
+                          onClick={() => {
+                            setStoredThreadListRoute("/projects");
+                            setStoredLastActiveThread(thread.thread_id);
+                          }}
                         >
                           <div className="codex-chat-row">
                             <div className="codex-chat-avatar">

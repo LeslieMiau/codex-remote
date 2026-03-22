@@ -30,6 +30,8 @@ import { CodexShell } from "./codex-shell";
 
 const POLL_INTERVAL_MS = 2_500;
 
+type InputFocusFilter = "all" | "desktop" | "replyable";
+
 function buildQueueHref(entry: CodexQueueEntry) {
   if (entry.patch_id) {
     return buildThreadPatchPath(entry.thread_id, entry.patch_id);
@@ -82,6 +84,44 @@ function isDesktopRecoveryInputEntry(entry: CodexQueueEntry) {
   return entry.kind === "input" && isDesktopOrientedNativeRequest(entry.native_request_kind);
 }
 
+function matchesInputFocusFilter(
+  kind: CodexQueueEntry["native_request_kind"] | undefined,
+  filter: InputFocusFilter
+) {
+  if (filter === "all") {
+    return true;
+  }
+
+  if (filter === "desktop") {
+    return isDesktopOrientedNativeRequest(kind);
+  }
+
+  return kind === "user_input";
+}
+
+function matchesQueueEntryFilter(entry: CodexQueueEntry, filter: InputFocusFilter) {
+  if (filter === "all") {
+    return true;
+  }
+
+  return entry.kind === "input" && matchesInputFocusFilter(entry.native_request_kind, filter);
+}
+
+function describeInputFocusFilter(
+  locale: "zh" | "en",
+  filter: InputFocusFilter
+) {
+  if (filter === "desktop") {
+    return localize(locale, { zh: "回桌面", en: "Desktop" });
+  }
+
+  if (filter === "replyable") {
+    return localize(locale, { zh: "手机可回", en: "Reply here" });
+  }
+
+  return localize(locale, { zh: "全部", en: "All" });
+}
+
 export function QueueScreen() {
   const { locale } = useLocale();
   const isZh = locale === "zh";
@@ -91,6 +131,7 @@ export function QueueScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(!getCachedOverview());
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [inputFocusFilter, setInputFocusFilter] = useState<InputFocusFilter>("all");
   const inFlightRef = useRef(false);
 
   useEffect(() => {
@@ -197,6 +238,18 @@ export function QueueScreen() {
         leadReplyableEntry.native_request_kind ?? "user_input"
       )
     : null;
+  const filteredDesktopRecoveryInputEntries = useMemo(
+    () => (inputFocusFilter === "replyable" ? [] : desktopRecoveryInputEntries),
+    [desktopRecoveryInputEntries, inputFocusFilter]
+  );
+  const filteredReplyableInputEntries = useMemo(
+    () => (inputFocusFilter === "desktop" ? [] : replyableInputEntries),
+    [inputFocusFilter, replyableInputEntries]
+  );
+  const filteredActionableQueue = useMemo(
+    () => actionableQueue.filter((entry) => matchesQueueEntryFilter(entry, inputFocusFilter)),
+    [actionableQueue, inputFocusFilter]
+  );
   const groupedQueue = useMemo(() => {
     const threadsById = new Map(
       (overview?.threads ?? []).map((thread) => [thread.thread_id, thread])
@@ -210,7 +263,7 @@ export function QueueScreen() {
       }
     >();
 
-    for (const entry of actionableQueue) {
+    for (const entry of filteredActionableQueue) {
       const thread = threadsById.get(entry.thread_id);
       const key = thread?.project_id ?? entry.thread_id;
       const current = groups.get(key) ?? {
@@ -237,8 +290,10 @@ export function QueueScreen() {
 
       return left.label.localeCompare(right.label);
     });
-  }, [actionableQueue, overview]);
-  const priorityEntries = actionableQueue.filter((entry) => entry.kind !== "input").slice(0, 3);
+  }, [filteredActionableQueue, overview]);
+  const priorityEntries = filteredActionableQueue
+    .filter((entry) => entry.kind !== "input")
+    .slice(0, 3);
 
   function renderPriorityCard(entry: CodexQueueEntry) {
     return (
@@ -423,7 +478,51 @@ export function QueueScreen() {
           </div>
         </section>
 
-        {desktopRecoveryInputEntries.length > 0 ? (
+        <section className="codex-page-card">
+          <div className="codex-page-section__header">
+            <div>
+              <p className="section-label">
+                {localize(locale, { zh: "输入筛选", en: "Input focus" })}
+              </p>
+              <h2>
+                {localize(locale, {
+                  zh: "按处理路径查看收件箱",
+                  en: "Sort inbox items by recovery path"
+                })}
+              </h2>
+            </div>
+          </div>
+          <div className="codex-inline-pills">
+            {(["all", "desktop", "replyable"] as const).map((filter) => (
+              <button
+                key={filter}
+                className={`chrome-button ${inputFocusFilter === filter ? "is-active" : ""}`}
+                onClick={() => setInputFocusFilter(filter)}
+                type="button"
+              >
+                {describeInputFocusFilter(locale, filter)}
+              </button>
+            ))}
+          </div>
+          <p className="threads-home__search-note">
+            {inputFocusFilter === "all"
+              ? localize(locale, {
+                  zh: "显示全部待处理事项；切到回桌面或手机可回，可以更快聚焦下一步。",
+                  en: "Showing every waiting item. Switch to desktop or reply-here to focus on the next thing you can handle."
+                })
+              : inputFocusFilter === "desktop"
+                ? localize(locale, {
+                    zh: "当前只看建议回桌面继续的输入请求。",
+                    en: "Only input requests that usually continue on desktop are shown right now."
+                  })
+                : localize(locale, {
+                    zh: "当前只看可以直接在手机处理的输入请求。",
+                    en: "Only input requests you can finish from the phone are shown right now."
+                  })}
+          </p>
+        </section>
+
+        {filteredDesktopRecoveryInputEntries.length > 0 ? (
           <section className="codex-page-section">
             <div className="codex-page-section__header">
               <div>
@@ -439,12 +538,14 @@ export function QueueScreen() {
               </div>
             </div>
             <div className="codex-inbox-focus">
-              {desktopRecoveryInputEntries.slice(0, 3).map((entry) => renderPriorityCard(entry))}
+              {filteredDesktopRecoveryInputEntries.slice(0, 3).map((entry) =>
+                renderPriorityCard(entry)
+              )}
             </div>
           </section>
         ) : null}
 
-        {replyableInputEntries.length > 0 ? (
+        {filteredReplyableInputEntries.length > 0 ? (
           <section className="codex-page-section">
             <div className="codex-page-section__header">
               <div>
@@ -460,12 +561,12 @@ export function QueueScreen() {
               </div>
             </div>
             <div className="codex-inbox-focus">
-              {replyableInputEntries.slice(0, 3).map((entry) => renderPriorityCard(entry))}
+              {filteredReplyableInputEntries.slice(0, 3).map((entry) => renderPriorityCard(entry))}
             </div>
           </section>
         ) : null}
 
-        {priorityEntries.length > 0 ? (
+        {inputFocusFilter === "all" && priorityEntries.length > 0 ? (
           <section className="codex-page-section">
             <div className="codex-page-section__header">
               <div>
@@ -479,18 +580,34 @@ export function QueueScreen() {
           </section>
         ) : null}
 
-        {!isLoading && actionableQueue.length === 0 ? (
+        {!isLoading && filteredActionableQueue.length === 0 ? (
           <section className="codex-empty-state">
-            <p className="eyebrow">{isZh ? "消息清空" : "Inbox clear"}</p>
+            <p className="eyebrow">
+              {inputFocusFilter === "all"
+                ? isZh
+                  ? "消息清空"
+                  : "Inbox clear"
+                : isZh
+                  ? "当前筛选为空"
+                  : "Nothing in this filter"}
+            </p>
             <h2>
-              {isZh
-                ? "现在没有需要你点开的待办消息。"
-                : "No messages need your attention right now."}
+              {inputFocusFilter === "all"
+                ? isZh
+                  ? "现在没有需要你点开的待办消息。"
+                  : "No messages need your attention right now."
+                : isZh
+                  ? "当前筛选下没有待办消息。"
+                  : "No inbox items match the current filter."}
             </h2>
             <p>
-              {isZh
-                ? "你仍然可以回到最近聊天继续看进度，或者检查刚刚完成的对话。"
-                : "You can still jump back into recent chats or review conversations that just wrapped up."}
+              {inputFocusFilter === "all"
+                ? isZh
+                  ? "你仍然可以回到最近聊天继续看进度，或者检查刚刚完成的对话。"
+                  : "You can still jump back into recent chats or review conversations that just wrapped up."
+                : isZh
+                  ? "切回“全部”可以重新查看其它待处理事项。"
+                  : "Switch back to All to browse the rest of the waiting items again."}
             </p>
           </section>
         ) : null}
@@ -501,7 +618,22 @@ export function QueueScreen() {
               <p className="section-label">
                 {localize(locale, { zh: "全部会话", en: "All chats" })}
               </p>
-              <h2>{localize(locale, { zh: "按工作区整理", en: "Grouped by workspace" })}</h2>
+              <h2>
+                {inputFocusFilter === "desktop"
+                  ? localize(locale, {
+                      zh: "按工作区查看回桌面事项",
+                      en: "Desktop-recovery chats by workspace"
+                    })
+                  : inputFocusFilter === "replyable"
+                    ? localize(locale, {
+                        zh: "按工作区查看手机可回事项",
+                        en: "Reply-from-phone chats by workspace"
+                      })
+                    : localize(locale, {
+                        zh: "按工作区整理",
+                        en: "Grouped by workspace"
+                      })}
+              </h2>
             </div>
           </div>
 
@@ -586,6 +718,26 @@ export function QueueScreen() {
               </section>
             ))}
           </div>
+          {!isLoading && groupedQueue.length === 0 ? (
+            <section className="codex-empty-state">
+              <p className="eyebrow">
+                {inputFocusFilter === "all"
+                  ? localize(locale, { zh: "暂无分组", en: "No groups yet" })
+                  : localize(locale, { zh: "当前筛选没有分组", en: "No groups in this filter" })}
+              </p>
+              <h2>
+                {inputFocusFilter === "all"
+                  ? localize(locale, {
+                      zh: "现在没有按工作区展示的待办聊天。",
+                      en: "There are no grouped waiting chats right now."
+                    })
+                  : localize(locale, {
+                      zh: "当前筛选下没有按工作区可展示的聊天。",
+                      en: "No workspace groups match the current filter."
+                    })}
+              </h2>
+            </section>
+          ) : null}
         </section>
       </div>
     </CodexShell>

@@ -1,6 +1,6 @@
 "use client";
 
-import { SharedThreadWorkspace } from "./shared-thread-workspace";
+import { SharedThreadWorkspace } from "./shared-thread-workspace-refreshed";
 
 interface ThreadWorkspaceProps {
   threadId: string;

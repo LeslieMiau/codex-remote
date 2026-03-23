@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "WATCHPACK_POLLING=true next dev",
+    "prebuild": "node -e \"require('node:fs').rmSync('.next', { recursive: true, force: true })\"",
     "build": "next build",
-    "check": "tsc --project tsconfig.json --noEmit",
+    "check": "next typegen && tsc --project tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {

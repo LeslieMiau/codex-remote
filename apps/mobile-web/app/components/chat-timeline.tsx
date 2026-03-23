@@ -160,25 +160,62 @@ function GroupItem({
   const isUser = group.role === "user";
   const isSystem = group.role === "system_action";
 
+  if (isSystem) {
+    const leadMessage = group.messages[group.messages.length - 1];
+    return (
+      <article className={[styles.liveBanner, styles.liveBannerWarning].join(" ")}>
+        <div className={styles.liveBannerHeader}>
+          <div className={styles.liveBannerCopy}>
+            <strong>{leadMessage.title || roleLabel(locale, group.role)}</strong>
+            <p>{renderMessageBody(locale, leadMessage)}</p>
+          </div>
+          <div className={styles.groupFooter}>{formatClockTime(locale, group.ended_at)}</div>
+        </div>
+
+        {leadMessage.approval_id ? (
+          <p className={styles.messageNote}>
+            {!pendingApprovalsById.get(leadMessage.approval_id)?.recoverable
+              ? localize(locale, {
+                  zh: "这条批准请求只能回到桌面 Codex app 处理。",
+                  en: "This approval can only be resolved from desktop Codex app now."
+                })
+              : localize(locale, {
+                  zh: "请先处理这条请求，Codex 才会继续。",
+                  en: "Handle this request before Codex can continue."
+                })}
+          </p>
+        ) : null}
+
+        {leadMessage.patch_id ? (
+          <div className={styles.pendingActions}>
+            <button
+              className="secondary-button"
+              onClick={() => onOpenPatchReview(leadMessage.patch_id!)}
+              type="button"
+            >
+              {localize(locale, { zh: "打开变更审查", en: "Open review" })}
+            </button>
+          </div>
+        ) : null}
+
+        <MessageDetails locale={locale} message={leadMessage} />
+      </article>
+    );
+  }
+
   return (
     <article
       className={[
         styles.messageGroup,
         isUser ? styles.messageGroupUser : "",
-        group.role === "assistant" ? styles.messageGroupAssistant : "",
-        isSystem ? styles.messageGroupSystem : ""
+        group.role === "assistant" ? styles.messageGroupAssistant : ""
       ]
         .filter(Boolean)
         .join(" ")}
     >
       {!isUser ? (
         <div
-          className={[
-            styles.messageAvatar,
-            isSystem ? styles.messageAvatarSystem : ""
-          ]
-            .filter(Boolean)
-            .join(" ")}
+          className={styles.messageAvatar}
         >
           {avatarLabel(group.role)}
         </div>
@@ -218,32 +255,6 @@ function GroupItem({
                         en: "Message loading, please wait."
                       })}
                 </p>
-              ) : null}
-
-              {message.role === "system_action" && message.approval_id ? (
-                <p className={styles.messageNote}>
-                  {!pendingApprovalsById.get(message.approval_id)?.recoverable
-                    ? localize(locale, {
-                        zh: "这个批准请求只能回到桌面 Codex app 处理。",
-                        en: "This approval can only be resolved from desktop Codex app now."
-                      })
-                    : localize(locale, {
-                        zh: "请在输入区上方的请求栏里继续处理。",
-                        en: "Continue from the request bar above the composer."
-                      })}
-                </p>
-              ) : null}
-
-              {message.role === "system_action" && message.patch_id ? (
-                <div className={styles.pendingActions}>
-                  <button
-                    className="secondary-button"
-                    onClick={() => onOpenPatchReview(message.patch_id!)}
-                    type="button"
-                  >
-                    {localize(locale, { zh: "打开变更审查", en: "Open review" })}
-                  </button>
-                </div>
               ) : null}
 
               <MessageDetails locale={locale} message={message} />

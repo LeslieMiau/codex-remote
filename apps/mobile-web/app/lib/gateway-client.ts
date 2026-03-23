@@ -145,9 +145,9 @@ function buildCapabilities(): CodexCapabilitiesResponse {
 function buildThread(threadId = "recovered-thread"): CodexThread {
   return {
     thread_id: threadId,
-    title: "Recovered thread",
+    title: "Chat",
     project_id: "recovered-project",
-    project_label: "Recovered project",
+    project_label: "Codex",
     repo_root: "/Users/miau/Documents/codex-remote",
     source: "gateway_fallback",
     state: "ready",
@@ -165,22 +165,10 @@ function buildThread(threadId = "recovered-thread"): CodexThread {
 
 function buildTranscript(threadId = "recovered-thread"): CodexTranscriptPageResponse {
   const thread = buildThread(threadId);
-  const items: CodexMessage[] = [
-    {
-      message_id: `recovered-${threadId}`,
-      thread_id: thread.thread_id,
-      timestamp: now(),
-      role: "assistant",
-      title: "Recovery note",
-      body: "This thread was reconstructed from local recovery artifacts.",
-      origin: "gateway_fallback",
-      action_required: false,
-      details: []
-    }
-  ];
+  const items: CodexMessage[] = [];
   const liveState: CodexLiveState = {
     status: "ready",
-    detail: "Recovered local snapshot",
+    detail: "",
     assistant_text: "",
     updated_at: now(),
     awaiting_native_commit: false,
@@ -222,8 +210,8 @@ function buildTimeline(threadId = "recovered-thread"): CodexTimelineResponse {
     thread_id: threadId,
     turn_id: "recovered-turn",
     status: "generated",
-    summary: "Recovered patch placeholder",
-    test_summary: "Original patch payload was not recoverable from local artifacts.",
+    summary: "Offline patch snapshot",
+    test_summary: "Patch details are unavailable while the gateway is offline.",
     created_at: timestamp,
     updated_at: timestamp,
     rollback_available: false,

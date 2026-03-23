@@ -126,4 +126,53 @@ describe("chat timeline component", () => {
 
     expect(markup).toContain("No messages yet in this chat.");
   });
+
+  it("renders system actions as lightweight review notices", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ChatTimeline, {
+        hasMoreRemoteHistory: false,
+        hiddenItemCount: 0,
+        isLoading: false,
+        isLoadingOlder: false,
+        locale: "en",
+        onDismissPendingSend() {},
+        onEditPendingSend() {},
+        onOpenPatchReview() {},
+        onRetryPendingSend() {},
+        pendingApprovalsById: new Map(),
+        timelineItems: [
+          {
+            type: "message_group" as const,
+            id: "group:system",
+            timestamp: "2026-03-23T09:02:00.000Z",
+            group: {
+              action_required: true,
+              detail_count: 0,
+              ended_at: "2026-03-23T09:02:00.000Z",
+              group_id: "group:system",
+              includes_live_draft: false,
+              messages: [
+                {
+                  ...buildMessage({
+                    body: "A patch is ready to review.",
+                    message_id: "message-system-1",
+                    role: "system_action",
+                    timestamp: "2026-03-23T09:02:00.000Z"
+                  }),
+                  patch_id: "patch-1",
+                  title: "Patch ready"
+                }
+              ],
+              role: "system_action",
+              started_at: "2026-03-23T09:02:00.000Z"
+            }
+          }
+        ]
+      })
+    );
+
+    expect(markup).toContain("Patch ready");
+    expect(markup).toContain("A patch is ready to review.");
+    expect(markup).toContain("Open review");
+  });
 });

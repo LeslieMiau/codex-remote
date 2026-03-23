@@ -326,15 +326,6 @@ export function ChatComposer({
           </button>
         </div>
 
-        <input
-          accept="image/*"
-          hidden
-          multiple
-          onChange={onImageSelection}
-          ref={imageInputRef}
-          type="file"
-        />
-
         {isRunActive ? (
           <div className={styles.stopWrap}>
             <button
@@ -347,6 +338,15 @@ export function ChatComposer({
             </button>
           </div>
         ) : null}
+
+        <input
+          accept="image/*"
+          hidden
+          multiple
+          onChange={onImageSelection}
+          ref={imageInputRef}
+          type="file"
+        />
       </div>
     </footer>
   );

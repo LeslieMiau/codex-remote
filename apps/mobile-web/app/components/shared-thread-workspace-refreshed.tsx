@@ -15,6 +15,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ChangeEvent,
   type KeyboardEvent,
   type SetStateAction
@@ -22,10 +23,11 @@ import {
 
 import { ChatComposer } from "./chat-composer";
 import { ChatTimeline } from "./chat-timeline";
-import { DetailShell } from "./detail-shell";
+import { useKeyboardViewportState } from "./mobile-viewport";
 import { MobileSheet } from "./mobile-sheet";
 import styles from "./shared-thread-workspace-refreshed.module.css";
 import { getCachedTranscript } from "../lib/client-cache";
+import { getDisplayThreadTitle } from "../lib/chat-thread-presentation";
 import {
   buildThreadPatchPath,
   buildThreadPath
@@ -60,7 +62,6 @@ import {
   useLocale
 } from "../lib/locale";
 import {
-  describeNativeRequestAttentionLabel,
   describeNativeRequestRecoveryNotice,
   describeNativeRequestTaskDetail
 } from "../lib/native-input-copy";
@@ -439,6 +440,7 @@ function revokePendingSendPreviews(pendingSends: PendingSendState[]) {
 export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) {
   const router = useRouter();
   const { locale } = useLocale();
+  const { keyboardOffset } = useKeyboardViewportState();
   const isZh = locale === "zh";
   const [prompt, setPrompt] = useState("");
   const [isMutating, setIsMutating] = useState(false);
@@ -742,53 +744,33 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
       ?.display_name ?? sharedSettings?.model ?? null;
   const hasImageCapability = Boolean(capabilities?.supports_images && capabilities?.image_inputs);
   const hasSkillCapability = Boolean(capabilities?.skills_input);
-  const headerSubtitle = error
-    ? localize(locale, {
-        zh: "有一项状态需要处理",
-        en: "There is an issue that needs attention"
-      })
-    : leadNativeRequest
-      ? `${
-          describeNativeRequestAttentionLabel(locale, leadNativeRequest.kind)
-        } · ${leadNativeRequest.title ?? translateNativeRequestKind(locale, leadNativeRequest.kind)}`
-      : leadApproval
-        ? localize(locale, {
-            zh: "等待批准后继续",
-            en: "Waiting for approval"
-          })
-        : leadPatch
-          ? localize(locale, {
-              zh: "等待完成变更审查",
-              en: "Waiting for review"
-            })
-          : isRunActive
-            ? liveActivity.title
-            : transcript
-              ? `${translateThreadState(locale, transcript.thread.state)} · ${formatTimestamp(
-                  locale,
-                  transcript.thread.updated_at
-                )}`
-              : localize(locale, {
-                  zh: "正在连接共享聊天",
-                  en: "Connecting to shared chat"
-                });
+  const displayThreadTitle = getDisplayThreadTitle(locale, transcript?.thread);
+  const headerSubtitle = transcript
+    ? `${translateThreadState(locale, transcript.thread.state)} · ${formatTimestamp(
+        locale,
+        transcript.thread.updated_at
+      )}`
+    : localize(locale, {
+        zh: "正在连接聊天",
+        en: "Connecting"
+      });
   const topStatus = error
     ? {
         detail: error,
-        title: localize(locale, { zh: "需要处理的问题", en: "Something needs attention" }),
+        title: localize(locale, { zh: "当前状态异常", en: "Something needs attention" }),
         tone: "danger" as const
       }
     : streamNotice
       ? {
-          detail: streamNotice,
-          title: localize(locale, { zh: "实时连接异常", en: "Live stream notice" }),
-          tone: "warning" as const
-        }
+        detail: streamNotice,
+        title: localize(locale, { zh: "正在使用降级同步", en: "Using fallback sync" }),
+        tone: "warning" as const
+      }
       : transportState === "idle" && transcript && !isLoading
         ? {
             detail: localize(locale, {
-              zh: "实时流暂时中断，界面正在退回轮询同步。",
-              en: "Live streaming paused for a moment. The view is temporarily falling back to polling."
+              zh: "实时流暂时不可用，界面会继续自动同步。",
+              en: "Live streaming is temporarily unavailable. The view will keep syncing."
             }),
             title: localize(locale, { zh: "正在重连", en: "Reconnecting" }),
             tone: "warning" as const
@@ -796,19 +778,19 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
         : transcript?.thread.sync_state === "sync_pending"
           ? {
               detail: localize(locale, {
-                zh: "最新消息已经发出，正在等待进入 Codex app 的原生时间线。",
-                en: "The latest message was sent and is waiting to enter the native Codex app timeline."
+                zh: "最新消息已发出，等待进入原生时间线。",
+                en: "The latest message was sent and is waiting to enter the native timeline."
               }),
-              title: localize(locale, { zh: "等待原生同步", en: "Waiting for native sync" }),
+              title: localize(locale, { zh: "等待同步", en: "Waiting for sync" }),
               tone: "warning" as const
             }
           : pendingSendsState.some((entry) => entry.status === "sending")
             ? {
                 detail: localize(locale, {
-                  zh: "消息已经提交到网关，会在原生时间线确认后进入正式会话记录。",
-                  en: "Your message reached the gateway and will appear in the official transcript after native confirmation."
+                  zh: "消息正在发送，确认后会进入正式会话记录。",
+                  en: "The message is sending and will appear in the official transcript after confirmation."
                 }),
-                title: localize(locale, { zh: "发送中", en: "Sending to Codex" }),
+                title: localize(locale, { zh: "发送中", en: "Sending" }),
                 tone: "warning" as const
               }
             : null;
@@ -1372,22 +1354,13 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
   }
 
   return (
-    <DetailShell
-      actions={
-        <button
-          className="chrome-button"
-          onClick={() => setMobilePanel("details")}
-          type="button"
-        >
-          {localize(locale, { zh: "更多", en: "More" })}
-        </button>
+    <div
+      className={styles.chatShell}
+      style={
+        {
+          "--keyboard-offset": `${keyboardOffset}px`
+        } as CSSProperties
       }
-      backHref={returnToListHref}
-      bodyClassName={styles.shellBody}
-      className={`codex-detail-shell--chat ${styles.chatShell}`}
-      eyebrow={transcript?.thread.project_label ?? (isZh ? "聊天" : "Chat")}
-      subtitle={headerSubtitle}
-      title={transcript?.thread.title ?? threadId}
     >
       <div className={styles.chatLayout}>
         {toastMessage ? (
@@ -1396,30 +1369,35 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
           </div>
         ) : null}
 
-        {transcript ? (
-          <section className={styles.metaRail}>
-            <span className={styles.metaChip}>
-              <strong>{translateThreadState(locale, transcript.thread.state)}</strong>
-            </span>
-            <span className={styles.metaChip}>
-              {localize(locale, { zh: "同步", en: "Sync" })} <strong>{syncStateLabel}</strong>
-            </span>
-            <span className={styles.metaChip}>
-              {localize(locale, { zh: "仓库", en: "Repo" })} <strong>{getRepoTail(transcript.thread.repo_root)}</strong>
-            </span>
-            {selectedModelLabel ? (
-              <span className={styles.metaChip}>
-                {localize(locale, { zh: "模型", en: "Model" })} <strong>{selectedModelLabel}</strong>
-              </span>
-            ) : null}
-            {sharedSettings?.model_reasoning_effort ? (
-              <span className={styles.metaChip}>
-                {localize(locale, { zh: "推理", en: "Reasoning" })}{" "}
-                <strong>{sharedSettings.model_reasoning_effort}</strong>
-              </span>
-            ) : null}
-          </section>
-        ) : null}
+        <header className={styles.pageHeader}>
+          <Link aria-label={returnToListLabel} className={styles.pageHeaderBack} href={returnToListHref}>
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path
+                d="M15 19l-7-7 7-7"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2.2"
+              />
+            </svg>
+          </Link>
+
+          <div className={styles.pageHeaderCopy}>
+            <h1>{displayThreadTitle}</h1>
+            <p className={styles.pageHeaderSubtitle}>{headerSubtitle}</p>
+          </div>
+
+          <div className={styles.pageHeaderActions}>
+            <button
+              className="chrome-button"
+              onClick={() => setMobilePanel("details")}
+              type="button"
+            >
+              {localize(locale, { zh: "更多", en: "More" })}
+            </button>
+          </div>
+        </header>
 
         {topStatus ? (
           <section
@@ -1435,7 +1413,6 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
               <strong>{topStatus.title}</strong>
               <p>{topStatus.detail}</p>
             </div>
-            <span className={styles.noticePill}>{transportLabel(locale, transportState)}</span>
           </section>
         ) : null}
 
@@ -2095,7 +2072,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
           ) : null}
         </MobileSheet>
       </div>
-    </DetailShell>
+    </div>
   );
 }
 

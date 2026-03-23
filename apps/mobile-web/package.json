@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('.next', { recursive: true, force: true })\"",
+    "predev": "node -e \"require('node:fs').rmSync('.next', { recursive: true, force: true })\"",
     "dev": "WATCHPACK_POLLING=true next dev",
     "prebuild": "node -e \"require('node:fs').rmSync('.next', { recursive: true, force: true })\"",
     "build": "next build",

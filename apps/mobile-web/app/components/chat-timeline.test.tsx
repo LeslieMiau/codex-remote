@@ -175,4 +175,51 @@ describe("chat timeline component", () => {
     expect(markup).toContain("A patch is ready to review.");
     expect(markup).toContain("Open review");
   });
+
+  it("does not render the old synthetic assistant fallback copy for empty live drafts", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ChatTimeline, {
+        hasMoreRemoteHistory: false,
+        hiddenItemCount: 0,
+        isLoading: false,
+        isLoadingOlder: false,
+        locale: "en",
+        onDismissPendingSend() {},
+        onEditPendingSend() {},
+        onOpenPatchReview() {},
+        onRetryPendingSend() {},
+        pendingApprovalsById: new Map(),
+        timelineItems: [
+          {
+            type: "message_group" as const,
+            id: "group:assistant-live",
+            timestamp: "2026-03-23T09:02:00.000Z",
+            group: {
+              action_required: false,
+              detail_count: 0,
+              ended_at: "2026-03-23T09:02:00.000Z",
+              group_id: "group:assistant-live",
+              includes_live_draft: true,
+              messages: [
+                {
+                  ...buildMessage({
+                    body: "",
+                    message_id: "message-live-1",
+                    role: "assistant",
+                    timestamp: "2026-03-23T09:02:00.000Z"
+                  }),
+                  is_live_draft: true
+                }
+              ],
+              role: "assistant",
+              started_at: "2026-03-23T09:02:00.000Z"
+            }
+          }
+        ]
+      })
+    );
+
+    expect(markup).toContain("Codex is still typing...");
+    expect(markup).not.toContain("Codex is processing this request");
+  });
 });

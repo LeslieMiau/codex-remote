@@ -457,6 +457,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [isLoadingSkills, setIsLoadingSkills] = useState(false);
   const [skillSheetOpen, setSkillSheetOpen] = useState(false);
+  const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
   const [selectedImages, setSelectedImages] = useState<PendingSendImage[]>([]);
   const [isUploadingImages, setIsUploadingImages] = useState(false);
   const [threadTitleDraft, setThreadTitleDraft] = useState("");
@@ -775,25 +776,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
             title: localize(locale, { zh: "正在重连", en: "Reconnecting" }),
             tone: "warning" as const
           }
-        : transcript?.thread.sync_state === "sync_pending"
-          ? {
-              detail: localize(locale, {
-                zh: "最新消息已发出，等待进入原生时间线。",
-                en: "The latest message was sent and is waiting to enter the native timeline."
-              }),
-              title: localize(locale, { zh: "等待同步", en: "Waiting for sync" }),
-              tone: "warning" as const
-            }
-          : pendingSendsState.some((entry) => entry.status === "sending")
-            ? {
-                detail: localize(locale, {
-                  zh: "消息正在发送，确认后会进入正式会话记录。",
-                  en: "The message is sending and will appear in the official transcript after confirmation."
-                }),
-                title: localize(locale, { zh: "发送中", en: "Sending" }),
-                tone: "warning" as const
-              }
-            : null;
+        : null;
 
   useEffect(() => {
     if (!transcript) {
@@ -1455,14 +1438,13 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
           ) : null}
 
           <ChatComposer
+            attachmentCount={selectedImages.length + selectedSkills.length}
             capabilitiesInterrupt={Boolean(capabilities?.interrupt)}
             composerDisabledReason={composerDisabledReason}
             composerInputDisabled={composerInputDisabled}
             composerRef={composerRef}
-            hasImageCapability={hasImageCapability}
-            hasSkillCapability={hasSkillCapability}
+            hasAttachmentCapability={hasImageCapability || hasSkillCapability}
             imageInputRef={imageInputRef}
-            isLoadingSkills={isLoadingSkills}
             isMutating={isMutating}
             isRunActive={isRunActive}
             isUploadingImages={isUploadingImages}
@@ -1473,13 +1455,13 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
             onComposerKeyDown={handleComposerKeyDown}
             onImageSelection={(event) => void handleImageSelection(event)}
             onInterrupt={handleInterrupt}
+            onOpenAttachmentSheet={() => {
+              setMobilePanel(null);
+              setAttachmentSheetOpen(true);
+            }}
             onOpenApprovalSheet={openApprovalSheet}
             onOpenNativeRequestSheet={openNativeRequestSheet}
             onOpenPatchReview={openPatchReview}
-            onOpenSkillSheet={() => {
-              setMobilePanel(null);
-              setSkillSheetOpen(true);
-            }}
             onPromptChange={setPrompt}
             onRemoveImage={removeSelectedImage}
             onRun={() => void handleRun()}
@@ -1503,6 +1485,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
               {returnToListLabel}
             </Link>
           }
+          variant="chat"
           open={mobilePanel === "threads"}
           onClose={() => setMobilePanel(null)}
           title={localize(locale, { zh: "切换对话", en: "Switch chats" })}
@@ -1520,28 +1503,33 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
               </div>
             </section>
           ) : null}
-          <div className="thread-list">
+          <div className={styles.sheetList}>
             {isLoadingThreads ? (
-              <p className="codex-side-empty">
+              <p className={styles.sheetEmpty}>
                 {localize(locale, { zh: "正在加载最近对话。", en: "Loading recent chats." })}
               </p>
             ) : switcherThreads.length === 0 ? (
-              <p className="codex-side-empty">
+              <p className={styles.sheetEmpty}>
                 {localize(locale, { zh: "当前还没有别的对话。", en: "No other chats yet." })}
               </p>
             ) : (
               switcherThreads.map((thread) => (
                 <button
                   key={thread.thread_id}
-                  className={`thread-row ${thread.thread_id === threadId ? "is-current" : ""}`}
+                  className={[
+                    styles.sheetListButton,
+                    thread.thread_id === threadId ? styles.sheetListButtonActive : ""
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
                   onClick={() => handleThreadSelect(thread.thread_id)}
                   type="button"
                 >
-                  <div className="thread-row__main">
+                  <div className={styles.sheetListButtonCopy}>
                     <strong>{thread.title}</strong>
                     <span>{thread.project_label}</span>
                   </div>
-                  <div className="thread-row__meta">
+                  <div className={styles.sheetListButtonMeta}>
                     <span className="state-pill">{translateThreadState(locale, thread.state)}</span>
                     {thread.pending_approvals > 0 ? (
                       <span className="status-dot">
@@ -1572,62 +1560,129 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
         </MobileSheet>
 
         <MobileSheet
+          eyebrow={localize(locale, { zh: "附件", en: "Attachments" })}
+          fullHeight={false}
+          open={attachmentSheetOpen}
+          onClose={() => setAttachmentSheetOpen(false)}
+          title={localize(locale, { zh: "添加到这条聊天", en: "Add to this chat" })}
+          variant="chat"
+        >
+          <div className={styles.sheetMenu}>
+            {hasImageCapability ? (
+              <button
+                className={styles.sheetMenuButton}
+                disabled={isMutating || isUploadingImages}
+                onClick={() => {
+                  setAttachmentSheetOpen(false);
+                  imageInputRef.current?.click();
+                }}
+                type="button"
+              >
+                <span className={styles.sheetMenuIcon}>+</span>
+                <span className={styles.sheetMenuCopy}>
+                  <strong>{localize(locale, { zh: "添加图片", en: "Add image" })}</strong>
+                  <span>
+                    {localize(locale, {
+                      zh: "选择图片并发送到当前聊天。",
+                      en: "Pick an image to send with this chat."
+                    })}
+                  </span>
+                </span>
+              </button>
+            ) : null}
+
+            {hasSkillCapability ? (
+              <button
+                className={styles.sheetMenuButton}
+                disabled={isMutating || isLoadingSkills}
+                onClick={() => {
+                  setAttachmentSheetOpen(false);
+                  setSkillSheetOpen(true);
+                }}
+                type="button"
+              >
+                <span className={styles.sheetMenuIcon}>#</span>
+                <span className={styles.sheetMenuCopy}>
+                  <strong>{localize(locale, { zh: "选择技能", en: "Pick skills" })}</strong>
+                  <span>
+                    {localize(locale, {
+                      zh: "把技能上下文一并带进下一条消息。",
+                      en: "Bring skill context into the next message."
+                    })}
+                  </span>
+                </span>
+              </button>
+            ) : null}
+          </div>
+        </MobileSheet>
+
+        <MobileSheet
           eyebrow={localize(locale, { zh: "信息", en: "Info" })}
+          fullHeight={false}
           open={mobilePanel === "details"}
           onClose={() => setMobilePanel(null)}
           title={localize(locale, { zh: "聊天信息", en: "Chat info" })}
+          variant="chat"
         >
-          <div className="codex-side-list">
-            <article className="codex-side-item">
-              <strong>{localize(locale, { zh: "聊天状态", en: "Chat status" })}</strong>
-              <div className="codex-side-list">
-                <div className="codex-side-row">
+          <div className={styles.sheetStack}>
+            <section className={styles.sheetSection}>
+              <div className={styles.sheetSectionHeader}>
+                <strong>{localize(locale, { zh: "聊天状态", en: "Chat status" })}</strong>
+              </div>
+              <div className={styles.sheetInfoList}>
+                <div className={styles.sheetInfoRow}>
                   <span>{localize(locale, { zh: "状态", en: "Status" })}</span>
-                  <span>{transcript ? translateThreadState(locale, transcript.thread.state) : "-"}</span>
+                  <strong>
+                    {transcript ? translateThreadState(locale, transcript.thread.state) : "-"}
+                  </strong>
                 </div>
-                <div className="codex-side-row">
+                <div className={styles.sheetInfoRow}>
                   <span>{localize(locale, { zh: "同步", en: "Sync" })}</span>
-                  <span>{syncStateLabel}</span>
+                  <strong>{syncStateLabel}</strong>
                 </div>
-                <div className="codex-side-row">
+                <div className={styles.sheetInfoRow}>
                   <span>{localize(locale, { zh: "连接", en: "Transport" })}</span>
-                  <span>{transportLabel(locale, transportState)}</span>
+                  <strong>{transportLabel(locale, transportState)}</strong>
                 </div>
-                <div className="codex-side-row">
+                <div className={styles.sheetInfoRow}>
                   <span>{localize(locale, { zh: "聊天 ID", en: "Chat ID" })}</span>
-                  <span>{threadId}</span>
+                  <strong>{threadId}</strong>
                 </div>
               </div>
-            </article>
+            </section>
 
-            <article className="codex-side-item">
-              <strong>{localize(locale, { zh: "聊天设置", en: "Chat settings" })}</strong>
-              <div className="codex-side-list">
-                <div className="codex-side-row">
+            <section className={styles.sheetSection}>
+              <div className={styles.sheetSectionHeader}>
+                <strong>{localize(locale, { zh: "聊天设置", en: "Chat settings" })}</strong>
+              </div>
+              <div className={styles.sheetInfoList}>
+                <div className={styles.sheetInfoRow}>
                   <span>{localize(locale, { zh: "模型", en: "Model" })}</span>
-                  <span>{selectedModelLabel ?? "-"}</span>
+                  <strong>{selectedModelLabel ?? "-"}</strong>
                 </div>
-                <div className="codex-side-row">
+                <div className={styles.sheetInfoRow}>
                   <span>{localize(locale, { zh: "推理", en: "Reasoning" })}</span>
-                  <span>{sharedSettings?.model_reasoning_effort ?? "-"}</span>
+                  <strong>{sharedSettings?.model_reasoning_effort ?? "-"}</strong>
                 </div>
-                <div className="codex-side-row">
+                <div className={styles.sheetInfoRow}>
                   <span>{localize(locale, { zh: "工作区", en: "Workspace" })}</span>
-                  <span>{transcript?.thread.repo_root ?? "-"}</span>
+                  <strong>{transcript?.thread.repo_root ?? "-"}</strong>
                 </div>
               </div>
-            </article>
+            </section>
 
-            <article className="codex-side-item">
-              <strong>{localize(locale, { zh: "标题", en: "Title" })}</strong>
-              <div className="codex-page-stack">
+            <section className={styles.sheetSection}>
+              <div className={styles.sheetSectionHeader}>
+                <strong>{localize(locale, { zh: "标题", en: "Title" })}</strong>
+              </div>
+              <div className={styles.sheetField}>
                 <input
-                  className="chrome-input"
+                  className={styles.sheetInput}
                   disabled={isMutating || !capabilities?.thread_rename}
                   onChange={(event) => setThreadTitleDraft(event.target.value)}
                   value={threadTitleDraft}
                 />
-                <div className="feed-actions">
+                <div className={styles.sheetActionGrid}>
                   <button
                     className="secondary-button"
                     disabled={
@@ -1643,11 +1698,13 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                   </button>
                 </div>
               </div>
-            </article>
+            </section>
 
-            <article className="codex-side-item">
-              <strong>{localize(locale, { zh: "聊天操作", en: "Thread actions" })}</strong>
-              <div className="feed-actions">
+            <section className={styles.sheetSection}>
+              <div className={styles.sheetSectionHeader}>
+                <strong>{localize(locale, { zh: "聊天操作", en: "Thread actions" })}</strong>
+              </div>
+              <div className={styles.sheetActionGrid}>
                 <button
                   className="secondary-button"
                   disabled={isMutating || !capabilities?.thread_archive || remoteThreadActionsBlocked}
@@ -1683,11 +1740,11 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                   {localize(locale, { zh: "开始 review", en: "Start review" })}
                 </button>
               </div>
-              <div className="codex-page-stack">
-                <label className="codex-form-field">
+              <div className={styles.sheetField}>
+                <label className={styles.sheetLabel}>
                   <span>{localize(locale, { zh: "回滚轮数", en: "Rollback turns" })}</span>
                   <input
-                    className="chrome-input"
+                    className={styles.sheetInput}
                     disabled={isMutating || !capabilities?.thread_rollback || remoteThreadActionsBlocked}
                     inputMode="numeric"
                     min="1"
@@ -1695,7 +1752,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                     value={rollbackTurnsDraft}
                   />
                 </label>
-                <div className="feed-actions">
+                <div className={styles.sheetActionGrid}>
                   <button
                     className="danger-button"
                     disabled={isMutating || !capabilities?.thread_rollback || remoteThreadActionsBlocked}
@@ -1706,20 +1763,26 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                   </button>
                 </div>
                 {remoteThreadActionsBlocked ? (
-                  <p className="codex-inline-note">
+                  <p className={styles.sheetNote}>
                     {localize(locale, {
-                      zh: "这条聊天还在等待进入原生 Codex 时间线，归档、分支、review 和回滚等操作会在同步完成后自动开放。",
-                      en: "This chat is still entering the native Codex timeline. Archive, fork, review, and rollback unlock automatically after sync finishes."
+                      zh: "这条聊天还在等待进入原生 Codex 时间线，归档、分支、review 和回滚等操作会在同步完成后开放。",
+                      en: "This chat is still entering the native Codex timeline. Archive, fork, review, and rollback unlock after sync finishes."
                     })}
                   </p>
                 ) : null}
               </div>
-            </article>
+            </section>
 
-            <article className="codex-side-item">
-              <strong>{localize(locale, { zh: "快捷操作", en: "Quick actions" })}</strong>
-              <div className="feed-actions">
-                <button className="secondary-button" onClick={() => void openThreadSwitcher()} type="button">
+            <section className={styles.sheetSection}>
+              <div className={styles.sheetSectionHeader}>
+                <strong>{localize(locale, { zh: "快捷操作", en: "Quick actions" })}</strong>
+              </div>
+              <div className={styles.sheetActionGrid}>
+                <button
+                  className="secondary-button"
+                  onClick={() => void openThreadSwitcher()}
+                  type="button"
+                >
                   {localize(locale, { zh: "最近聊天", en: "Recent chats" })}
                 </button>
                 <button
@@ -1733,16 +1796,23 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                 <button
                   className="secondary-button"
                   disabled={isMutating || !hasSkillCapability}
-                  onClick={() => setSkillSheetOpen(true)}
+                  onClick={() => {
+                    setMobilePanel(null);
+                    setSkillSheetOpen(true);
+                  }}
                   type="button"
                 >
                   {localize(locale, { zh: "选择技能", en: "Pick skills" })}
                 </button>
-                <Link className="chrome-button" href={returnToListHref} onClick={() => setMobilePanel(null)}>
+                <Link
+                  className="chrome-button"
+                  href={returnToListHref}
+                  onClick={() => setMobilePanel(null)}
+                >
                   {returnToListLabel}
                 </Link>
               </div>
-            </article>
+            </section>
           </div>
         </MobileSheet>
 
@@ -1768,6 +1838,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
               </button>
             </>
           }
+          fullHeight={false}
           open={Boolean(confirmState)}
           onClose={() => setConfirmState(null)}
           title={
@@ -1775,6 +1846,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
               ? localize(locale, { zh: "停止当前运行？", en: "Stop the current run?" })
               : localize(locale, { zh: "拒绝这条批准请求？", en: "Reject this approval request?" })
           }
+          variant="chat"
         >
           <p className="codex-inline-note">
             {confirmState?.kind === "interrupt"
@@ -1827,6 +1899,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
           open={Boolean(leadNativeRequest) && nativeRequestSheetOpen}
           onClose={closeNativeRequestSheet}
           title={localize(locale, { zh: "处理补充输入", en: "Handle extra input" })}
+          variant="chat"
         >
           {leadNativeRequest ? (
             <div className="codex-side-list">
@@ -1944,6 +2017,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
           open={skillSheetOpen}
           onClose={() => setSkillSheetOpen(false)}
           title={localize(locale, { zh: "选择技能", en: "Pick skills" })}
+          variant="chat"
         >
           <div className="codex-side-list">
             {skillsError ? <p className="codex-inline-note tone-danger">{skillsError}</p> : null}
@@ -1990,9 +2064,11 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
               {localize(locale, { zh: "关闭", en: "Close" })}
             </button>
           }
+          fullHeight={false}
           open={Boolean(lightboxImageUrl)}
           onClose={() => setLightboxImageUrl(null)}
           title={localize(locale, { zh: "图片预览", en: "Image preview" })}
+          variant="chat"
         >
           {lightboxImageUrl ? (
             <div className={styles.lightbox}>
@@ -2035,6 +2111,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
           open={Boolean(leadApproval) && approvalSheetOpen}
           onClose={closeApprovalSheet}
           title={localize(locale, { zh: "处理这条请求", en: "Respond to this request" })}
+          variant="chat"
         >
           {leadApproval ? (
             <div className="codex-side-list">

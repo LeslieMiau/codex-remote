@@ -78,6 +78,28 @@ describe("chat timeline", () => {
     expect(items.filter((item) => item.type === "message_group")).toHaveLength(2);
   });
 
+  it("keeps empty live drafts out of synthetic assistant fallback bodies", () => {
+    const items = buildChatTimelineItems({
+      messages: [
+        buildMessage({
+          body: "",
+          message_id: "message-live",
+          role: "assistant",
+          timestamp: "2026-03-23T09:01:00.000Z",
+          is_live_draft: true
+        })
+      ],
+      pendingSends: []
+    });
+
+    expect(items).toHaveLength(2);
+    expect(items[1]?.type).toBe("message_group");
+    if (items[1]?.type !== "message_group") {
+      throw new Error("Expected a message group.");
+    }
+    expect(items[1].group.messages[0]?.body).toBe("");
+  });
+
   it("inserts date dividers across day boundaries and keeps pending sends in order", () => {
     const items = buildChatTimelineItems({
       messages: [

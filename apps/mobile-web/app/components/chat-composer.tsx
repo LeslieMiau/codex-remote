@@ -20,14 +20,13 @@ import {
 import styles from "./shared-thread-workspace-refreshed.module.css";
 
 interface ChatComposerProps {
+  attachmentCount: number;
   capabilitiesInterrupt: boolean;
   composerDisabledReason: string | null;
   composerInputDisabled: boolean;
   composerRef: MutableRefObject<HTMLTextAreaElement | null>;
-  hasImageCapability: boolean;
-  hasSkillCapability: boolean;
+  hasAttachmentCapability: boolean;
   imageInputRef: MutableRefObject<HTMLInputElement | null>;
-  isLoadingSkills: boolean;
   isMutating: boolean;
   isRunActive: boolean;
   isUploadingImages: boolean;
@@ -38,10 +37,10 @@ interface ChatComposerProps {
   onComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void;
   onImageSelection(event: ChangeEvent<HTMLInputElement>): void;
   onInterrupt(): void;
+  onOpenAttachmentSheet(): void;
   onOpenApprovalSheet(): void;
   onOpenNativeRequestSheet(): void;
   onOpenPatchReview(patchId: string): void;
-  onOpenSkillSheet(): void;
   onPromptChange(value: string): void;
   onRemoveImage(localId: string): void;
   onRun(): void;
@@ -65,14 +64,13 @@ function translateNativeRequestKind(locale: Locale, kind: NativeRequestRecord["k
 }
 
 export function ChatComposer({
+  attachmentCount,
   capabilitiesInterrupt,
   composerDisabledReason,
   composerInputDisabled,
   composerRef,
-  hasImageCapability,
-  hasSkillCapability,
+  hasAttachmentCapability,
   imageInputRef,
-  isLoadingSkills,
   isMutating,
   isRunActive,
   isUploadingImages,
@@ -83,10 +81,10 @@ export function ChatComposer({
   onComposerKeyDown,
   onImageSelection,
   onInterrupt,
+  onOpenAttachmentSheet,
   onOpenApprovalSheet,
   onOpenNativeRequestSheet,
   onOpenPatchReview,
-  onOpenSkillSheet,
   onPromptChange,
   onRemoveImage,
   onRun,
@@ -97,26 +95,26 @@ export function ChatComposer({
   selectedImages,
   selectedSkills
 }: ChatComposerProps) {
+  const hasAttachmentTray = selectedSkills.length > 0 || selectedImages.length > 0;
+
   return (
     <footer className={styles.composerShell}>
       {leadNativeRequest ? (
         <div className={styles.composerGate}>
           <div className={styles.composerGateCopy}>
-            <p className="section-label">
-              {localize(locale, { zh: "补充输入", en: "Extra input" })}
-            </p>
+            <p>{localize(locale, { zh: "补充输入", en: "Extra input" })}</p>
             <strong>
               {leadNativeRequest.title ??
                 translateNativeRequestKind(locale, leadNativeRequest.kind)}
             </strong>
-            <p>
+            <span>
               {leadNativeRequest.prompt ??
                 describeNativeRequestGateBody(
                   locale,
                   leadNativeRequest.kind,
                   pendingNativeRequestCount
                 )}
-            </p>
+            </span>
           </div>
           <button className="secondary-button" onClick={onOpenNativeRequestSheet} type="button">
             {describeNativeRequestActionLabel(locale, leadNativeRequest.kind)}
@@ -125,19 +123,19 @@ export function ChatComposer({
       ) : leadApproval ? (
         <div className={styles.composerGate}>
           <div className={styles.composerGateCopy}>
-            <p className="section-label">{localize(locale, { zh: "请求", en: "Request" })}</p>
+            <p>{localize(locale, { zh: "请求", en: "Request" })}</p>
             <strong>{translateApprovalKind(locale, leadApproval.kind)}</strong>
-            <p>
+            <span>
               {leadApproval.recoverable
                 ? localize(locale, {
                     zh: "先处理这条批准请求，Codex 才会继续执行。",
                     en: "Handle this approval before Codex can continue."
                   })
                 : localize(locale, {
-                    zh: "这条批准请求已经失去原生绑定，只能回到桌面 Codex app 处理。",
-                    en: "This approval lost its native binding and must be resolved from desktop Codex app."
-                  })}
-            </p>
+                  zh: "这条批准请求已经失去原生绑定，只能回到桌面 Codex app 处理。",
+                  en: "This approval lost its native binding and must be resolved from desktop Codex app."
+                })}
+            </span>
           </div>
           <button className="secondary-button" onClick={onOpenApprovalSheet} type="button">
             {localize(locale, { zh: "处理请求", en: "Open request" })}
@@ -146,15 +144,13 @@ export function ChatComposer({
       ) : leadPatch ? (
         <div className={styles.composerGate}>
           <div className={styles.composerGateCopy}>
-            <p className="section-label">
-              {localize(locale, { zh: "变更审查", en: "Change review" })}
-            </p>
+            <p>{localize(locale, { zh: "变更审查", en: "Change review" })}</p>
             <strong>{localize(locale, { zh: "查看最新变更", en: "Review the latest change" })}</strong>
-            <p>
+            <span>
               {leadPatch.files.length > 0
                 ? `${leadPatch.summary} · ${leadPatch.files.map((file) => file.path).join(", ")}`
                 : leadPatch.summary}
-            </p>
+            </span>
           </div>
           <button
             className="secondary-button"
@@ -166,37 +162,34 @@ export function ChatComposer({
         </div>
       ) : null}
 
-      {selectedSkills.length > 0 ? (
-        <div className={styles.chipRow}>
+      {hasAttachmentTray ? (
+        <div className={styles.attachmentTray}>
           {selectedSkills.map((skill) => (
             <button
               key={skill.path}
-              className={styles.composerChip}
+              className={styles.attachmentPill}
               onClick={() => onToggleSelectedSkill(skill)}
               type="button"
             >
+              <span className={styles.attachmentPillIcon}>#</span>
               <span>{skill.display_name ?? skill.name}</span>
               <span aria-hidden="true">x</span>
             </button>
           ))}
-        </div>
-      ) : null}
 
-      {selectedImages.length > 0 ? (
-        <div className={styles.imageRow}>
           {selectedImages.map((image) => (
             <div
               key={image.local_id}
               className={[
-                styles.imagePreview,
-                image.status === "failed" ? styles.imagePreviewError : ""
+                styles.attachmentCard,
+                image.status === "failed" ? styles.attachmentCardError : ""
               ]
                 .filter(Boolean)
                 .join(" ")}
             >
               {image.preview_url ? (
                 <button
-                  className={styles.imageOpen}
+                  className={styles.attachmentPreview}
                   onClick={() => onViewImage(image.preview_url ?? "")}
                   type="button"
                 >
@@ -207,11 +200,11 @@ export function ChatComposer({
                   />
                 </button>
               ) : (
-                <div className={styles.imageOpen}>
+                <div className={styles.attachmentPreview}>
                   <div className={styles.imageMedia} />
                 </div>
               )}
-              <div className={styles.imageMeta}>
+              <div className={styles.attachmentMeta}>
                 <strong>{image.file_name ?? localize(locale, { zh: "图片", en: "Image" })}</strong>
                 <span>
                   {image.status === "uploading"
@@ -224,7 +217,7 @@ export function ChatComposer({
               </div>
               <button
                 aria-label={localize(locale, { zh: "移除图片", en: "Remove image" })}
-                className={styles.imageRemove}
+                className={styles.attachmentRemove}
                 onClick={() => onRemoveImage(image.local_id)}
                 type="button"
               >
@@ -236,45 +229,30 @@ export function ChatComposer({
       ) : null}
 
       <div className={styles.composerRow}>
-        <div className={styles.composerActions}>
-          {hasImageCapability ? (
+        {hasAttachmentCapability ? (
+          <div className={styles.composerActions}>
             <button
               className={[
-                styles.composeTrigger,
-                selectedImages.length > 0 ? styles.composeTriggerActive : ""
+                styles.attachmentTrigger,
+                attachmentCount > 0 ? styles.attachmentTriggerActive : ""
               ]
                 .filter(Boolean)
                 .join(" ")}
+              aria-label={localize(locale, {
+                zh: "打开附件菜单",
+                en: "Open attachments"
+              })}
               disabled={isMutating || isUploadingImages}
-              onClick={() => imageInputRef.current?.click()}
+              onClick={onOpenAttachmentSheet}
               type="button"
             >
-              <span>{localize(locale, { zh: "图片", en: "Image" })}</span>
-              {selectedImages.length > 0 ? (
-                <span className={styles.composeBadge}>{selectedImages.length}</span>
+              <span aria-hidden="true">+</span>
+              {attachmentCount > 0 ? (
+                <span className={styles.attachmentTriggerBadge}>{attachmentCount}</span>
               ) : null}
             </button>
-          ) : null}
-
-          {hasSkillCapability ? (
-            <button
-              className={[
-                styles.composeTrigger,
-                selectedSkills.length > 0 ? styles.composeTriggerActive : ""
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              disabled={isMutating || isLoadingSkills}
-              onClick={onOpenSkillSheet}
-              type="button"
-            >
-              <span>{localize(locale, { zh: "技能", en: "Skills" })}</span>
-              {selectedSkills.length > 0 ? (
-                <span className={styles.composeBadge}>{selectedSkills.length}</span>
-              ) : null}
-            </button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
 
         <div className={styles.inputWrap}>
           <textarea
@@ -292,15 +270,26 @@ export function ChatComposer({
             rows={1}
             value={prompt}
           />
+        </div>
+
+        {isRunActive ? (
+          <button
+            aria-label={localize(locale, { zh: "停止", en: "Stop" })}
+            className={[styles.actionButton, styles.actionButtonStop].join(" ")}
+            disabled={isMutating || !capabilitiesInterrupt}
+            onClick={onInterrupt}
+            type="button"
+          >
+            {localize(locale, { zh: "停", en: "Stop" })}
+          </button>
+        ) : (
           <button
             aria-label={
               isMutating
                 ? localize(locale, { zh: "发送中", en: "Sending" })
-                : isRunActive
-                  ? localize(locale, { zh: "继续", en: "Continue" })
-                  : localize(locale, { zh: "发送", en: "Send" })
+                : localize(locale, { zh: "发送", en: "Send" })
             }
-            className={styles.sendButton}
+            className={styles.actionButton}
             disabled={Boolean(composerDisabledReason) || isMutating || !prompt.trim()}
             onClick={onRun}
             type="button"
@@ -324,20 +313,7 @@ export function ChatComposer({
               />
             </svg>
           </button>
-        </div>
-
-        {isRunActive ? (
-          <div className={styles.stopWrap}>
-            <button
-              className="danger-button"
-              disabled={isMutating || !capabilitiesInterrupt}
-              onClick={onInterrupt}
-              type="button"
-            >
-              {localize(locale, { zh: "停止", en: "Stop" })}
-            </button>
-          </div>
-        ) : null}
+        )}
 
         <input
           accept="image/*"

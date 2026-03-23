@@ -13,6 +13,7 @@ interface MobileSheetProps {
   open: boolean;
   onClose(): void;
   title: string;
+  variant?: "default" | "chat";
 }
 
 const FOCUSABLE_SELECTOR = [
@@ -42,7 +43,8 @@ export function MobileSheet({
   fullHeight = true,
   open,
   onClose,
-  title
+  title,
+  variant = "default"
 }: MobileSheetProps) {
   const { locale } = useLocale();
   const titleId = useId();
@@ -157,13 +159,18 @@ export function MobileSheet({
 
   return (
     <div
-      className={`sheet-backdrop codex-mobile-sheet ${disableDismiss ? "is-locked" : ""}`}
-      onClick={disableDismiss ? undefined : onClose}
+      className={`codex-mobile-sheet ${disableDismiss ? "is-locked" : ""} ${
+        variant === "chat" ? "codex-mobile-sheet--chat" : ""
+      }`}
+      data-variant={variant}
     >
+      <div className="sheet-backdrop" onClick={disableDismiss ? undefined : onClose} />
       <section
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`sheet codex-mobile-sheet__dialog ${fullHeight ? "is-full-height" : ""}`}
+        className={`sheet codex-mobile-sheet__dialog ${fullHeight ? "is-full-height" : ""} ${
+          variant === "chat" ? "codex-mobile-sheet__dialog--chat" : ""
+        }`}
         onClick={(event) => event.stopPropagation()}
         ref={dialogRef}
         role="dialog"
@@ -176,12 +183,14 @@ export function MobileSheet({
       >
         <div
           aria-hidden="true"
-          className="codex-mobile-sheet__handle"
+          className={`codex-mobile-sheet__handle ${
+            variant === "chat" ? "codex-mobile-sheet__handle--chat" : ""
+          }`}
           onTouchEnd={handleTouchEnd}
           onTouchMove={handleTouchMove}
           onTouchStart={handleTouchStart}
         />
-        <header className="sheet-header">
+        <header className={`sheet-header ${variant === "chat" ? "sheet-header--chat" : ""}`}>
           <div>
             {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
             <h2 id={titleId}>{title}</h2>
@@ -197,9 +206,23 @@ export function MobileSheet({
           </button>
         </header>
 
-        <div className="codex-mobile-sheet__content">{children}</div>
+        <div
+          className={`codex-mobile-sheet__content ${
+            variant === "chat" ? "codex-mobile-sheet__content--chat" : ""
+          }`}
+        >
+          {children}
+        </div>
 
-        {footer ? <div className="sheet-actions codex-mobile-sheet__footer">{footer}</div> : null}
+        {footer ? (
+          <div
+            className={`sheet-actions codex-mobile-sheet__footer ${
+              variant === "chat" ? "codex-mobile-sheet__footer--chat" : ""
+            }`}
+          >
+            {footer}
+          </div>
+        ) : null}
       </section>
     </div>
   );

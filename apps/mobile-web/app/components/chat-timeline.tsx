@@ -65,30 +65,16 @@ function roleLabel(locale: Locale, role: MessageGroup["role"]) {
   }
 }
 
-function avatarLabel(role: MessageGroup["role"]) {
-  switch (role) {
-    case "assistant":
-      return "C";
-    case "system_action":
-      return "!";
-    default:
-      return "Y";
-  }
-}
-
-function renderMessageBody(locale: Locale, message: MessageGroup["messages"][number]) {
+function renderMessageBody(message: MessageGroup["messages"][number]) {
   if (message.body?.trim()) {
     return message.body;
   }
 
-  if (message.role === "assistant") {
-    return localize(locale, {
-      zh: "Codex 正在处理这条请求，详细过程已折叠。",
-      en: "Codex is processing this request. Detailed steps are folded below."
-    });
+  if (message.title?.trim()) {
+    return message.title;
   }
 
-  return message.title ?? "";
+  return "";
 }
 
 function LoadingState({ locale }: { locale: Locale }) {
@@ -162,18 +148,20 @@ function GroupItem({
 
   if (isSystem) {
     const leadMessage = group.messages[group.messages.length - 1];
+    const leadBody = renderMessageBody(leadMessage);
+
     return (
-      <article className={[styles.liveBanner, styles.liveBannerWarning].join(" ")}>
-        <div className={styles.liveBannerHeader}>
-          <div className={styles.liveBannerCopy}>
+      <article className={styles.systemNotice}>
+        <div className={styles.systemNoticeHeader}>
+          <div className={styles.systemNoticeCopy}>
             <strong>{leadMessage.title || roleLabel(locale, group.role)}</strong>
-            <p>{renderMessageBody(locale, leadMessage)}</p>
+            {leadBody ? <p>{leadBody}</p> : null}
           </div>
-          <div className={styles.groupFooter}>{formatClockTime(locale, group.ended_at)}</div>
+          <span className={styles.systemNoticeTime}>{formatClockTime(locale, group.ended_at)}</span>
         </div>
 
         {leadMessage.approval_id ? (
-          <p className={styles.messageNote}>
+          <p className={styles.systemNoticeMeta}>
             {!pendingApprovalsById.get(leadMessage.approval_id)?.recoverable
               ? localize(locale, {
                   zh: "这条批准请求只能回到桌面 Codex app 处理。",
@@ -187,7 +175,7 @@ function GroupItem({
         ) : null}
 
         {leadMessage.patch_id ? (
-          <div className={styles.pendingActions}>
+          <div className={styles.systemNoticeActions}>
             <button
               className="secondary-button"
               onClick={() => onOpenPatchReview(leadMessage.patch_id!)}
@@ -213,53 +201,44 @@ function GroupItem({
         .filter(Boolean)
         .join(" ")}
     >
-      {!isUser ? (
-        <div
-          className={styles.messageAvatar}
-        >
-          {avatarLabel(group.role)}
-        </div>
-      ) : null}
-
       <div className={styles.groupStack}>
-        {!isUser ? (
-          <div className={styles.groupHeader}>
-            <strong>{roleLabel(locale, group.role)}</strong>
-          </div>
-        ) : null}
-
         <div className={styles.groupBody}>
-          {group.messages.map((message) => (
-            <div
-              key={message.message_id}
-              className={[
-                styles.bubble,
-                isUser ? styles.bubbleUser : "",
-                isSystem ? styles.bubbleSystem : "",
-                message.is_live_draft ? styles.bubbleLive : ""
-              ]
-                .filter(Boolean)
-                .join(" ")}
-            >
-              <p className={styles.messageText}>{renderMessageBody(locale, message)}</p>
+          {group.messages.map((message) => {
+            const body = renderMessageBody(message);
+            const hasBody = Boolean(body.trim());
 
-              {message.is_live_draft ? (
-                <p className={styles.messageNote}>
-                  {message.awaiting_native_commit
-                    ? localize(locale, {
-                        zh: "正式消息正在进入原生 Codex 聊天记录，请稍等。",
-                        en: "The official message is entering native Codex chat history. Please wait."
-                      })
-                    : localize(locale, {
-                        zh: "消息加载中，请稍等。",
-                        en: "Message loading, please wait."
-                      })}
-                </p>
-              ) : null}
+            return (
+              <div
+                key={message.message_id}
+                className={[
+                  styles.bubble,
+                  isUser ? styles.bubbleUser : "",
+                  isSystem ? styles.bubbleSystem : "",
+                  message.is_live_draft ? styles.bubbleLive : ""
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                {hasBody ? <p className={styles.messageText}>{body}</p> : null}
 
-              <MessageDetails locale={locale} message={message} />
-            </div>
-          ))}
+                {message.is_live_draft ? (
+                  <p className={styles.messageNote}>
+                    {message.awaiting_native_commit
+                      ? localize(locale, {
+                          zh: "等待同步到正式聊天记录",
+                          en: "Waiting for the official chat history to catch up"
+                        })
+                      : localize(locale, {
+                          zh: "Codex 正在继续输入…",
+                          en: "Codex is still typing..."
+                        })}
+                  </p>
+                ) : null}
+
+                <MessageDetails locale={locale} message={message} />
+              </div>
+            );
+          })}
         </div>
 
         <div className={styles.groupFooter}>{formatClockTime(locale, group.ended_at)}</div>
@@ -388,40 +367,38 @@ export function ChatTimeline({
               <article
                 key={item.id}
                 className={[
-                  styles.liveBanner,
-                  item.tone === "danger" ? styles.liveBannerDanger : "",
-                  item.tone === "success" ? styles.liveBannerSuccess : "",
-                  item.tone === "warning" ? styles.liveBannerWarning : "",
-                  item.tone === "neutral" ? styles.liveBannerNeutral : ""
+                  styles.activityStrip,
+                  item.tone === "danger" ? styles.activityStripDanger : "",
+                  item.tone === "success" ? styles.activityStripSuccess : "",
+                  item.tone === "warning" ? styles.activityStripWarning : "",
+                  item.tone === "neutral" ? styles.activityStripNeutral : ""
                 ]
                   .filter(Boolean)
                   .join(" ")}
               >
-                <div className={styles.liveBannerHeader}>
-                  <div className={styles.liveBannerCopy}>
-                    <strong>
-                      {item.live_state.awaiting_native_commit
-                        ? localize(locale, {
-                            zh: "等待原生确认",
-                            en: "Waiting for native confirmation"
-                          })
-                        : localize(locale, {
-                            zh: "Codex 正在继续这条聊天",
-                            en: "Codex is continuing this chat"
-                          })}
-                    </strong>
-                    <p>
-                      {renderLivePanelBody(
-                        locale,
-                        item.live_state,
-                        item.has_inline_draft
-                      )}
-                    </p>
-                  </div>
-                  <div className={styles.groupFooter}>
-                    {formatClockTime(locale, item.live_state.updated_at)}
-                  </div>
+                <div className={styles.activityStripCopy}>
+                  <strong>
+                    {item.live_state.awaiting_native_commit
+                      ? localize(locale, {
+                          zh: "等待原生确认",
+                          en: "Waiting for native confirmation"
+                        })
+                      : localize(locale, {
+                          zh: "Codex 正在继续这条聊天",
+                          en: "Codex is continuing this chat"
+                        })}
+                  </strong>
+                  <p>
+                    {renderLivePanelBody(
+                      locale,
+                      item.live_state,
+                      item.has_inline_draft
+                    )}
+                  </p>
                 </div>
+                <span className={styles.activityStripTime}>
+                  {formatClockTime(locale, item.live_state.updated_at)}
+                </span>
                 {item.live_state.details.length > 0 ? (
                   <details className={styles.messageDetails}>
                     <summary>

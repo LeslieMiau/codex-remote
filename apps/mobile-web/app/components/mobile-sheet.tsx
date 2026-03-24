@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { localize, useLocale } from "../lib/locale";
+import styles from "./mobile-sheet.module.css";
 
 interface MobileSheetProps {
   children: ReactNode;
@@ -13,7 +14,7 @@ interface MobileSheetProps {
   open: boolean;
   onClose(): void;
   title: string;
-  variant?: "default" | "chat";
+  variant?: "default" | "chat" | "compact";
 }
 
 const FOCUSABLE_SELECTOR = [
@@ -159,19 +160,18 @@ export function MobileSheet({
 
   return (
     <div
-      className={`codex-mobile-sheet ${disableDismiss ? "is-locked" : ""} ${
-        variant === "chat" ? "codex-mobile-sheet--chat" : ""
-      }`}
-      data-variant={variant}
+      className={styles.root}
+      data-mobile-sheet-root=""
+      data-sheet-variant={variant}
     >
-      <div className="sheet-backdrop" onClick={disableDismiss ? undefined : onClose} />
+      <div className={styles.backdrop} onClick={disableDismiss ? undefined : onClose} />
       <section
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`sheet codex-mobile-sheet__dialog ${fullHeight ? "is-full-height" : ""} ${
-          variant === "chat" ? "codex-mobile-sheet__dialog--chat" : ""
-        }`}
+        className={`${styles.dialog} ${fullHeight ? styles.dialogFullHeight : ""}`}
         onClick={(event) => event.stopPropagation()}
+        data-mobile-sheet-dialog=""
+        data-sheet-variant={variant}
         ref={dialogRef}
         role="dialog"
         style={
@@ -183,42 +183,57 @@ export function MobileSheet({
       >
         <div
           aria-hidden="true"
-          className={`codex-mobile-sheet__handle ${
-            variant === "chat" ? "codex-mobile-sheet__handle--chat" : ""
-          }`}
+          className={styles.handle}
+          data-mobile-sheet-handle=""
+          data-sheet-variant={variant}
           onTouchEnd={handleTouchEnd}
           onTouchMove={handleTouchMove}
           onTouchStart={handleTouchStart}
         />
-        <header className={`sheet-header ${variant === "chat" ? "sheet-header--chat" : ""}`}>
-          <div>
-            {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
+        <header
+          className={styles.header}
+          data-mobile-sheet-header=""
+          data-sheet-variant={variant}
+        >
+          <div className={styles.headerCopy} data-sheet-variant={variant}>
+            {eyebrow ? <p className={styles.eyebrow}>{eyebrow}</p> : null}
             <h2 id={titleId}>{title}</h2>
           </div>
           <button
-            className="chrome-button"
+            aria-label={localize(locale, { zh: "关闭", en: "Close" })}
+            className={styles.closeButton}
             disabled={disableDismiss}
             onClick={onClose}
             ref={closeButtonRef}
+            title={localize(locale, { zh: "关闭", en: "Close" })}
             type="button"
           >
-            {localize(locale, { zh: "关闭", en: "Close" })}
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path
+                d="m7 7 10 10M17 7 7 17"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+              />
+            </svg>
           </button>
         </header>
 
         <div
-          className={`codex-mobile-sheet__content ${
-            variant === "chat" ? "codex-mobile-sheet__content--chat" : ""
-          }`}
+          className={styles.content}
+          data-mobile-sheet-content=""
+          data-sheet-variant={variant}
         >
           {children}
         </div>
 
         {footer ? (
           <div
-            className={`sheet-actions codex-mobile-sheet__footer ${
-              variant === "chat" ? "codex-mobile-sheet__footer--chat" : ""
-            }`}
+            className={styles.footer}
+            data-mobile-sheet-footer=""
+            data-sheet-variant={variant}
           >
             {footer}
           </div>

@@ -127,6 +127,82 @@ function translateNativeRequestKind(
   }
 }
 
+function MoreIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path
+        d="M6 12h.01M12 12h.01M18 12h.01"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2.4"
+      />
+    </svg>
+  );
+}
+
+function ImageIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path
+        d="M4.75 6.75h14.5a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H4.75a2 2 0 0 1-2-2v-6.5a2 2 0 0 1 2-2Z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <path
+        d="m7.5 14 2.4-2.4a1.2 1.2 0 0 1 1.7 0L14 14l1.7-1.7a1.2 1.2 0 0 1 1.7 0L19 14"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M9 10.25a1.1 1.1 0 1 0 0 .01"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
+function SkillsIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path
+        d="M12 4.5v15M4.5 12h15M6.5 6.5l11 11M17.5 6.5l-11 11"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.7"
+      />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path
+        d="m6.5 12.5 3.5 3.5 7.5-8"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
 function parseNativeRequestQuestions(request: NativeRequestRecord | null | undefined) {
   if (!request?.payload || typeof request.payload !== "object") {
     return [];
@@ -1373,11 +1449,13 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
 
           <div className={styles.pageHeaderActions}>
             <button
-              className="chrome-button"
+              aria-label={localize(locale, { zh: "更多操作", en: "More actions" })}
+              className={styles.pageHeaderIconButton}
               onClick={() => setMobilePanel("details")}
+              title={localize(locale, { zh: "更多", en: "More" })}
               type="button"
             >
-              {localize(locale, { zh: "更多", en: "More" })}
+              <MoreIcon />
             </button>
           </div>
         </header>
@@ -1564,8 +1642,8 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
           fullHeight={false}
           open={attachmentSheetOpen}
           onClose={() => setAttachmentSheetOpen(false)}
-          title={localize(locale, { zh: "添加到这条聊天", en: "Add to this chat" })}
-          variant="chat"
+          title={localize(locale, { zh: "添加附件", en: "Add attachment" })}
+          variant="compact"
         >
           <div className={styles.sheetMenu}>
             {hasImageCapability ? (
@@ -1578,14 +1656,13 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                 }}
                 type="button"
               >
-                <span className={styles.sheetMenuIcon}>+</span>
+                <span className={styles.sheetMenuIcon}>
+                  <ImageIcon />
+                </span>
                 <span className={styles.sheetMenuCopy}>
-                  <strong>{localize(locale, { zh: "添加图片", en: "Add image" })}</strong>
-                  <span>
-                    {localize(locale, {
-                      zh: "选择图片并发送到当前聊天。",
-                      en: "Pick an image to send with this chat."
-                    })}
+                  <strong>{localize(locale, { zh: "图片", en: "Image" })}</strong>
+                  <span className={styles.sheetMenuHint}>
+                    {localize(locale, { zh: "发送到当前聊天", en: "Send to this chat" })}
                   </span>
                 </span>
               </button>
@@ -1601,14 +1678,21 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                 }}
                 type="button"
               >
-                <span className={styles.sheetMenuIcon}>#</span>
+                <span className={styles.sheetMenuIcon}>
+                  <SkillsIcon />
+                </span>
                 <span className={styles.sheetMenuCopy}>
-                  <strong>{localize(locale, { zh: "选择技能", en: "Pick skills" })}</strong>
-                  <span>
-                    {localize(locale, {
-                      zh: "把技能上下文一并带进下一条消息。",
-                      en: "Bring skill context into the next message."
-                    })}
+                  <strong>{localize(locale, { zh: "技能", en: "Skills" })}</strong>
+                  <span className={styles.sheetMenuHint}>
+                    {selectedSkills.length > 0
+                      ? localize(locale, {
+                          zh: `已选 ${selectedSkills.length} 项`,
+                          en: `${selectedSkills.length} selected`
+                        })
+                      : localize(locale, {
+                          zh: "加入下一条消息",
+                          en: "Add to the next message"
+                        })}
                   </span>
                 </span>
               </button>
@@ -2009,24 +2093,19 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
 
         <MobileSheet
           eyebrow={localize(locale, { zh: "技能", en: "Skills" })}
-          footer={
-            <button className="secondary-button" onClick={() => setSkillSheetOpen(false)} type="button">
-              {localize(locale, { zh: "完成", en: "Done" })}
-            </button>
-          }
           open={skillSheetOpen}
           onClose={() => setSkillSheetOpen(false)}
-          title={localize(locale, { zh: "选择技能", en: "Pick skills" })}
-          variant="chat"
+          title={localize(locale, { zh: "技能", en: "Skills" })}
+          variant="compact"
         >
-          <div className="codex-side-list">
-            {skillsError ? <p className="codex-inline-note tone-danger">{skillsError}</p> : null}
+          <div className={styles.sheetList}>
+            {skillsError ? <p className={styles.sheetEmpty}>{skillsError}</p> : null}
             {isLoadingSkills ? (
-              <p className="codex-inline-note">
+              <p className={styles.sheetEmpty}>
                 {localize(locale, { zh: "正在加载技能列表。", en: "Loading skills." })}
               </p>
             ) : availableSkills.length === 0 ? (
-              <p className="codex-inline-note">
+              <p className={styles.sheetEmpty}>
                 {localize(locale, {
                   zh: "当前线程没有可用技能，或这个 Codex 版本还没有暴露技能列表。",
                   en: "No skills are available for this thread, or this Codex build does not expose a skills list."
@@ -2036,21 +2115,28 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
               availableSkills.map((skill) => {
                 const selected = selectedSkills.some((candidate) => candidate.path === skill.path);
                 return (
-                  <article key={skill.path} className="codex-side-item">
-                    <strong>{skill.display_name ?? skill.name}</strong>
-                    <p>{skill.description ?? skill.path}</p>
-                    <div className="feed-actions">
-                      <button
-                        className={selected ? "primary-button" : "secondary-button"}
-                        onClick={() => toggleSelectedSkill(skill)}
-                        type="button"
-                      >
-                        {selected
-                          ? localize(locale, { zh: "已选择", en: "Selected" })
-                          : localize(locale, { zh: "加入输入", en: "Add to prompt" })}
-                      </button>
-                    </div>
-                  </article>
+                  <button
+                    key={skill.path}
+                    className={[
+                      styles.sheetListButton,
+                      selected ? styles.sheetListButtonActive : ""
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    onClick={() => toggleSelectedSkill(skill)}
+                    type="button"
+                  >
+                    <span className={styles.sheetMenuIcon}>
+                      <SkillsIcon />
+                    </span>
+                    <span className={styles.sheetListButtonCopy}>
+                      <strong>{skill.display_name ?? skill.name}</strong>
+                      <span>{skill.description ?? skill.path}</span>
+                    </span>
+                    <span className={styles.sheetCheck}>
+                      {selected ? <CheckIcon /> : null}
+                    </span>
+                  </button>
                 );
               })
             )}
@@ -2059,16 +2145,11 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
 
         <MobileSheet
           eyebrow={localize(locale, { zh: "图片", en: "Image" })}
-          footer={
-            <button className="secondary-button" onClick={() => setLightboxImageUrl(null)} type="button">
-              {localize(locale, { zh: "关闭", en: "Close" })}
-            </button>
-          }
           fullHeight={false}
           open={Boolean(lightboxImageUrl)}
           onClose={() => setLightboxImageUrl(null)}
           title={localize(locale, { zh: "图片预览", en: "Image preview" })}
-          variant="chat"
+          variant="compact"
         >
           {lightboxImageUrl ? (
             <div className={styles.lightbox}>

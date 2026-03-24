@@ -3,6 +3,7 @@ import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type {
   CodexOverviewResponse,
+  CodexSharedSettingsResponse,
   CodexQueueEntry,
   CodexThread
 } from "@codex-remote/protocol";
@@ -15,7 +16,7 @@ import {
   vi
 } from "vitest";
 
-import { setCachedOverview } from "../lib/client-cache";
+import { setCachedOverview, setCachedSharedSettings } from "../lib/client-cache";
 import { LocaleProvider } from "../lib/locale";
 
 let mockPathname = "/projects";
@@ -44,6 +45,7 @@ import { ChatsHomeShell } from "./chats-home-shell";
 import { DetailShell } from "./detail-shell";
 import { OverviewScreen } from "./overview-screen";
 import { QueueScreen } from "./queue-screen";
+import { SettingsScreen } from "./settings-screen";
 
 function renderWithProviders(node: ReactNode) {
   return renderToStaticMarkup(createElement(LocaleProvider, null, node));
@@ -123,10 +125,42 @@ function buildQueueEntry(
   } as CodexQueueEntry;
 }
 
+function buildSharedSettings(): CodexSharedSettingsResponse {
+  return {
+    source: "/tmp/config.toml",
+    updated_at: "2026-03-22T10:00:00.000Z",
+    read_only: false,
+    model: "gpt-5.4",
+    model_reasoning_effort: "medium",
+    available_models: [
+      {
+        slug: "gpt-5.4",
+        display_name: "GPT-5.4",
+        description: "Shared flagship model",
+        default_reasoning_effort: "medium",
+        input_modalities: ["text"],
+        supports_personality: false,
+        is_default: true,
+        reasoning_levels: [
+          { effort: "low", description: "Low" },
+          { effort: "medium", description: "Medium" },
+          { effort: "high", description: "High" }
+        ]
+      }
+    ],
+    experimental_features: [],
+    requirements: {
+      allowed_approval_policies: ["never"],
+      allowed_sandbox_modes: ["workspace-write"],
+      allowed_web_search_modes: ["enabled"]
+    }
+  } as CodexSharedSettingsResponse;
+}
+
 function extractRowTitles(markup: string) {
   return [
     ...markup.matchAll(
-      /<a(?:[^>]*data-thread-row="[^"]+"[^>]*|[^>]*class="codex-thread-row[^"]*"[^>]*)>[\s\S]*?<strong>(.*?)<\/strong>/g
+      /<a(?:[^>]*data-thread-row="[^"]+"[^>]*|[^>]*class="codex-thread-row[^"]*"[^>]*)>[\s\S]*?<strong(?:[^>]*)>(.*?)<\/strong>/g
     )
   ].map((match) => match[1]);
 }
@@ -135,11 +169,13 @@ describe("mobile chat shells", () => {
   beforeEach(() => {
     mockPathname = "/projects";
     setCachedOverview(null);
+    setCachedSharedSettings(null);
     vi.clearAllMocks();
   });
 
   afterEach(() => {
     setCachedOverview(null);
+    setCachedSharedSettings(null);
   });
 
   it("keeps only chats and settings in the top-level tab bar", () => {
@@ -174,7 +210,7 @@ describe("mobile chat shells", () => {
       )
     );
 
-    expect(markup).toContain("codex-detail-header");
+    expect(markup).toContain('data-detail-shell="compact"');
     expect(markup).toContain('href="/projects"');
     expect(markup).not.toContain("codex-tab-bar");
   });
@@ -184,11 +220,13 @@ describe("mobile chat list rendering", () => {
   beforeEach(() => {
     mockPathname = "/projects";
     setCachedOverview(null);
+    setCachedSharedSettings(null);
     vi.clearAllMocks();
   });
 
   afterEach(() => {
     setCachedOverview(null);
+    setCachedSharedSettings(null);
   });
 
   it("renders overview threads in mobile-first priority order", () => {
@@ -328,13 +366,28 @@ describe("mobile chat list rendering", () => {
 
     const markup = renderWithProviders(createElement(QueueScreen));
 
-    expect(markup).toContain("codex-detail-header");
+    expect(markup).toContain('data-queue-screen="compact-inbox"');
     expect(markup).not.toContain("codex-tab-bar");
+    expect(markup).not.toContain("codex-home-hero");
+    expect(markup).not.toContain("codex-page-card--plain");
     expect(extractRowTitles(markup)).toEqual([
       "Input item",
       "Approval item",
       "Patch item",
       "Failed item"
     ]);
+  });
+
+  it("renders settings in the compact light shell without the old dashboard wrapper", () => {
+    mockPathname = "/settings";
+    setCachedSharedSettings(buildSharedSettings());
+
+    const markup = renderWithProviders(createElement(SettingsScreen));
+
+    expect(markup).toContain('data-shell="settings-home"');
+    expect(markup).toContain('data-settings-screen="compact-settings"');
+    expect(markup).not.toContain("codex-app--primary");
+    expect(markup).not.toContain("共享配置");
+    expect(markup).not.toContain("这里可以查看并调整共享 Codex 的模型与推理配置。");
   });
 });

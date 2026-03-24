@@ -19,14 +19,22 @@ const htmlDisallowedMarkers = [
   "codex-home-hero",
   "codex-page-card--plain",
   "Like WeChat or Telegram",
-  "像微信和 Telegram 一样"
+  "像微信和 Telegram 一样",
+  "codex-app--primary"
 ];
 
 const routeChecks = [
   { path: "/", status: 307, location: "/projects" },
   { path: "/projects", status: 200 },
   { path: "/queue", status: 200 },
+  { path: "/settings", status: 200 },
   { path: "/threads/recovered-thread", status: 200 }
+];
+
+const htmlChecks = [
+  { path: "/projects", marker: 'data-overview-screen="chat-list"' },
+  { path: "/queue", marker: 'data-queue-screen="compact-inbox"' },
+  { path: "/settings", marker: 'data-settings-screen="compact-settings"' }
 ];
 
 const serverLog = [];
@@ -210,17 +218,19 @@ async function verifyRoutes() {
   }
 }
 
-async function verifyProjectsHtml() {
-  const response = await fetchRoute("/projects");
-  const html = await response.text();
+async function verifyCompactHtml() {
+  for (const check of htmlChecks) {
+    const response = await fetchRoute(check.path);
+    const html = await response.text();
 
-  if (!html.includes('data-overview-screen="chat-list"')) {
-    fail("/projects HTML is missing the new chat-list root marker.");
-  }
+    if (!html.includes(check.marker)) {
+      fail(`${check.path} HTML is missing the compact root marker ${check.marker}.`);
+    }
 
-  for (const marker of htmlDisallowedMarkers) {
-    if (html.includes(marker)) {
-      fail(`/projects HTML still contains legacy marker: ${marker}`);
+    for (const marker of htmlDisallowedMarkers) {
+      if (html.includes(marker)) {
+        fail(`${check.path} HTML still contains legacy marker: ${marker}`);
+      }
     }
   }
 }
@@ -275,8 +285,8 @@ async function main() {
     log("Verifying HTTP routes...");
     await verifyRoutes();
 
-    log("Verifying /projects HTML markers...");
-    await verifyProjectsHtml();
+    log("Verifying compact HTML markers...");
+    await verifyCompactHtml();
 
     if (skipBrowser) {
       log("Skipping browser smoke because MOBILE_WEB_SMOKE_SKIP_BROWSER=1 was set explicitly.");

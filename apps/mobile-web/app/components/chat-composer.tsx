@@ -63,6 +63,21 @@ function translateNativeRequestKind(locale: Locale, kind: NativeRequestRecord["k
   }
 }
 
+function CloseIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path
+        d="m8 8 8 8M16 8l-8 8"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
 export function ChatComposer({
   attachmentCount,
   capabilitiesInterrupt,
@@ -173,7 +188,9 @@ export function ChatComposer({
             >
               <span className={styles.attachmentPillIcon}>#</span>
               <span>{skill.display_name ?? skill.name}</span>
-              <span aria-hidden="true">x</span>
+              <span aria-hidden="true">
+                <CloseIcon />
+              </span>
             </button>
           ))}
 
@@ -206,14 +223,14 @@ export function ChatComposer({
               )}
               <div className={styles.attachmentMeta}>
                 <strong>{image.file_name ?? localize(locale, { zh: "图片", en: "Image" })}</strong>
-                <span>
-                  {image.status === "uploading"
-                    ? localize(locale, { zh: "上传中", en: "Uploading" })
-                    : image.status === "failed"
-                      ? image.error ??
-                        localize(locale, { zh: "上传失败", en: "Upload failed" })
-                      : localize(locale, { zh: "已就绪", en: "Ready" })}
-                </span>
+                {image.status !== "ready" ? (
+                  <span>
+                    {image.status === "uploading"
+                      ? localize(locale, { zh: "上传中", en: "Uploading" })
+                      : image.error ??
+                        localize(locale, { zh: "上传失败", en: "Upload failed" })}
+                  </span>
+                ) : null}
               </div>
               <button
                 aria-label={localize(locale, { zh: "移除图片", en: "Remove image" })}
@@ -221,7 +238,7 @@ export function ChatComposer({
                 onClick={() => onRemoveImage(image.local_id)}
                 type="button"
               >
-                x
+                <CloseIcon />
               </button>
             </div>
           ))}
@@ -264,8 +281,8 @@ export function ChatComposer({
             onChange={(event) => onPromptChange(event.target.value)}
             onKeyDown={onComposerKeyDown}
             placeholder={localize(locale, {
-              zh: "继续发消息，告诉 Codex 下一步要做什么。",
-              en: "Send the next message and tell Codex what to do in this chat."
+              zh: "发消息给 Codex",
+              en: "Message Codex"
             })}
             rows={1}
             value={prompt}

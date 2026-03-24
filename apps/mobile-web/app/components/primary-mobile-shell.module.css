@@ -1,0 +1,168 @@
+.shell {
+  color-scheme: light;
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at top, rgba(159, 185, 246, 0.18), transparent 32%),
+    #f5f6f8;
+  color: #172133;
+}
+
+.layout {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
+  padding-bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+}
+
+.shellKeyboardOpen .layout {
+  padding-bottom: calc(12px + var(--keyboard-offset, 0px));
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 10px)
+    14px
+    8px;
+  background: rgba(245, 246, 248, 0.94);
+  border-bottom: 1px solid rgba(17, 31, 45, 0.05);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.headerCopy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.eyebrow {
+  margin: 0 0 3px;
+  color: #8c98ac;
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.headerCopy h1 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.08;
+  font-weight: 760;
+  letter-spacing: -0.03em;
+}
+
+.headerCopy p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 12px 12px;
+}
+
+.tabBar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  transform: translateX(-50%);
+  z-index: 8;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  width: min(calc(100vw - 18px), 420px);
+  padding: 6px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow:
+    0 12px 28px rgba(19, 32, 51, 0.1),
+    inset 0 0 0 1px rgba(19, 32, 51, 0.05);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.tabItem {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-height: 52px;
+  padding: 8px 10px 7px;
+  border-radius: 18px;
+  color: #78859a;
+  text-decoration: none;
+}
+
+.tabItemActive {
+  background: rgba(36, 100, 235, 0.12);
+  color: #2464eb;
+}
+
+.tabIcon {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+}
+
+.tabIcon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.tabLabel {
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.tabBadge {
+  position: absolute;
+  top: 6px;
+  right: 16px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #2464eb;
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 800;
+}
+
+@media (min-width: 780px) {
+  .header {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .body {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+}

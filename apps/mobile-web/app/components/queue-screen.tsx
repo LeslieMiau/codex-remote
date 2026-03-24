@@ -21,7 +21,6 @@ import {
   useLocale
 } from "../lib/locale";
 import {
-  describeNativeRequestActionLabel,
   describeNativeRequestAttentionLabel,
   describeNativeRequestQueueLabel,
   describeQueueInputPreview,
@@ -30,6 +29,7 @@ import {
 import { compareQueueEntriesForMobile } from "../lib/mobile-priority";
 import { setStoredLastActiveThread } from "../lib/thread-storage";
 import { DetailShell } from "./detail-shell";
+import styles from "./queue-screen.module.css";
 
 const POLL_INTERVAL_MS = 2_500;
 
@@ -228,7 +228,6 @@ export function QueueScreen() {
   const approvalCount = actionableQueue.filter((entry) => entry.kind === "approval").length;
   const patchCount = actionableQueue.filter((entry) => entry.kind === "patch").length;
   const failedCount = actionableQueue.filter((entry) => entry.kind === "failed").length;
-  const leadEntry = filteredActionableQueue[0] ?? null;
   const subtitle =
     filteredActionableQueue.length > 0
       ? localize(locale, {
@@ -240,6 +239,21 @@ export function QueueScreen() {
           en: "Nothing needs your attention right now."
         });
 
+  function renderRefreshIcon() {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <path
+          d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.9"
+        />
+      </svg>
+    );
+  }
+
   function renderQueueRow(entry: CodexQueueEntry) {
     const isDesktopRecovery = isDesktopRecoveryInputEntry(entry);
     const thread = overview?.threads.find((candidate) => candidate.thread_id === entry.thread_id);
@@ -247,33 +261,44 @@ export function QueueScreen() {
     return (
       <Link
         key={entry.entry_id}
-        className={`codex-thread-row codex-thread-row--queue ${
-          isDesktopRecovery ? "is-desktop-recovery" : ""
-        }`}
+        className={styles.row}
+        data-thread-row={entry.entry_id}
         href={buildQueueHref(entry)}
         onClick={() => {
           setStoredThreadListRoute("/queue");
           setStoredLastActiveThread(entry.thread_id);
         }}
       >
-        <div className="codex-thread-row__avatar">
+        <div
+          className={[
+            styles.rowAvatar,
+            isDesktopRecovery ? styles.rowAvatarWarning : ""
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
           {getAvatarLabel(entry.title)}
         </div>
-        <div className="codex-thread-row__content">
-          <div className="codex-thread-row__head">
-            <div className="codex-thread-row__title-wrap">
-              <strong>{entry.title}</strong>
-              <p>{describeQueuePreview(locale, entry)}</p>
+        <div className={styles.rowContent}>
+          <div className={styles.rowHead}>
+            <div className={styles.rowTitleWrap}>
+              <strong className={styles.rowTitle}>{entry.title}</strong>
+              <p className={styles.rowPreview}>{describeQueuePreview(locale, entry)}</p>
             </div>
-            <div className="codex-thread-row__aside">
-              <span className="codex-thread-row__time">
-                {formatDateTime(locale, entry.timestamp)}
-              </span>
-              <span className="codex-thread-row__badge">1</span>
+            <div className={styles.rowAside}>
+              <span className={styles.rowTime}>{formatDateTime(locale, entry.timestamp)}</span>
+              <span className={styles.rowBadge}>1</span>
             </div>
           </div>
-          <div className="codex-thread-row__meta">
-            <span className="status-dot">
+          <div className={styles.rowMeta}>
+            <span
+              className={[
+                styles.rowChip,
+                entry.kind === "input" ? styles.rowChipAccent : ""
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
               {entry.kind === "input"
                 ? describeNativeRequestQueueLabel(
                     locale,
@@ -282,15 +307,22 @@ export function QueueScreen() {
                 : translateQueueKind(locale, entry.kind)}
             </span>
             {entry.kind === "input" ? (
-              <span className={`status-dot ${isDesktopRecovery ? "tone-warning" : ""}`}>
+              <span
+                className={[
+                  styles.rowChip,
+                  isDesktopRecovery ? styles.rowChipWarning : ""
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
                 {describeNativeRequestAttentionLabel(
                   locale,
                   entry.native_request_kind ?? "user_input"
                 )}
               </span>
             ) : null}
-            <span className="status-dot">{translateStatusText(locale, entry.status)}</span>
-            {thread ? <span className="status-dot">{getRepoTail(thread.repo_root)}</span> : null}
+            <span className={styles.rowChip}>{translateStatusText(locale, entry.status)}</span>
+            {thread ? <span className={styles.rowChip}>{getRepoTail(thread.repo_root)}</span> : null}
           </div>
         </div>
       </Link>
@@ -301,7 +333,12 @@ export function QueueScreen() {
     <DetailShell
       actions={
         <button
-          className="chrome-button"
+          aria-label={
+            isRefreshing
+              ? localize(locale, { zh: "同步中", en: "Syncing" })
+              : localize(locale, { zh: "刷新收件箱", en: "Refresh inbox" })
+          }
+          className={styles.iconButton}
           disabled={isLoading || isRefreshing}
           onClick={() => {
             void getCodexOverview()
@@ -314,11 +351,10 @@ export function QueueScreen() {
                 setError(loadError instanceof Error ? loadError.message : String(loadError))
               );
           }}
+          title={localize(locale, { zh: "刷新", en: "Refresh" })}
           type="button"
         >
-          {isRefreshing
-            ? localize(locale, { zh: "同步中", en: "Syncing" })
-            : localize(locale, { zh: "刷新", en: "Refresh" })}
+          {renderRefreshIcon()}
         </button>
       }
       backHref="/projects"
@@ -326,150 +362,96 @@ export function QueueScreen() {
       subtitle={subtitle}
       title={isZh ? "待处理事项" : "Inbox"}
     >
-      <div className="codex-page-stack codex-page-stack--detail">
+      <div className={styles.page} data-queue-screen="compact-inbox">
         {error ? (
           <section
             aria-live="assertive"
-            className="codex-status-strip codex-status-strip--stacked tone-danger"
+            className={`${styles.notice} ${styles.noticeDanger}`}
             role="alert"
           >
-            <div className="codex-status-strip__copy">
-              <p className="section-label">{isZh ? "连接异常" : "Connection issue"}</p>
+            <div className={styles.noticeCopy}>
+              <p className={styles.noticeLabel}>{isZh ? "连接异常" : "Connection issue"}</p>
               <strong>{isZh ? "收件箱暂时没有同步成功" : "The inbox did not sync this time"}</strong>
               <p>{error}</p>
             </div>
           </section>
         ) : null}
 
-        <section className="codex-home-hero codex-home-hero--compact">
-          <div className="codex-home-hero__copy">
-            <p className="section-label">{isZh ? "优先处理" : "Handle first"}</p>
-            <strong>
-              {leadEntry
-                ? leadEntry.title
-                : localize(locale, {
-                    zh: "现在没有待处理事项。",
-                    en: "There are no waiting items right now."
-                  })}
-            </strong>
-            <p>
-              {leadEntry
-                ? describeQueuePreview(locale, leadEntry)
-                : localize(locale, {
-                    zh: "当 Codex 需要你批准、回复或审查时，新的事项会显示在这里。",
-                    en: "When Codex needs a reply, approval, or review, new items will surface here."
-                  })}
-            </p>
-          </div>
-          <div className="codex-home-hero__pills">
-            <span className="status-dot">
-              {isZh
-                ? `${replyableInputEntries.length} 条手机可回`
-                : `${replyableInputEntries.length} reply here`}
-            </span>
-            <span className="status-dot tone-warning">
-              {isZh
-                ? `${desktopRecoveryInputEntries.length} 条回桌面`
-                : `${desktopRecoveryInputEntries.length} desktop`}
-            </span>
-            <span className="status-dot">
+        <div className={styles.summaryRow}>
+          <span className={`${styles.summaryChip} ${styles.summaryChipAccent}`}>
+            {isZh
+              ? `${filteredActionableQueue.length} 条待处理`
+              : `${filteredActionableQueue.length} waiting`}
+          </span>
+          <span className={styles.summaryChip}>
+            {isZh
+              ? `${replyableInputEntries.length} 条手机可回`
+              : `${replyableInputEntries.length} reply here`}
+          </span>
+          <span className={`${styles.summaryChip} ${styles.summaryChipWarning}`}>
+            {isZh
+              ? `${desktopRecoveryInputEntries.length} 条回桌面`
+              : `${desktopRecoveryInputEntries.length} desktop`}
+          </span>
+          {approvalCount > 0 ? (
+            <span className={styles.summaryChip}>
               {isZh ? `${approvalCount} 个批准` : `${approvalCount} approvals`}
             </span>
-            <span className="status-dot">
+          ) : null}
+          {patchCount > 0 ? (
+            <span className={styles.summaryChip}>
               {isZh ? `${patchCount} 个审查` : `${patchCount} reviews`}
             </span>
-            <span className="status-dot">
+          ) : null}
+          {failedCount > 0 ? (
+            <span className={styles.summaryChip}>
               {isZh ? `${failedCount} 个失败` : `${failedCount} failed`}
             </span>
-          </div>
-          {leadEntry ? (
-            <div className="codex-home-hero__actions">
-              <Link
-                className="primary-button"
-                href={buildQueueHref(leadEntry)}
-                onClick={() => {
-                  setStoredThreadListRoute("/queue");
-                  setStoredLastActiveThread(leadEntry.thread_id);
-                }}
-              >
-                {leadEntry.kind === "input"
-                  ? describeNativeRequestActionLabel(
-                      locale,
-                      leadEntry.native_request_kind ?? "user_input"
-                    )
-                  : localize(locale, { zh: "打开事项", en: "Open item" })}
-              </Link>
-            </div>
           ) : null}
-        </section>
+        </div>
 
-        <section className="codex-page-card codex-page-card--plain">
-          <div className="codex-inline-pills">
-            {(["all", "desktop", "replyable"] as const).map((filter) => (
-              <button
-                key={filter}
-                className={`chrome-button ${inputFocusFilter === filter ? "is-active" : ""}`}
-                onClick={() => setInputFocusFilter(filter)}
-                type="button"
-              >
-                {describeInputFocusFilter(locale, filter)}
-              </button>
-            ))}
-          </div>
-        </section>
+        <div className={styles.filterBar}>
+          {(["all", "desktop", "replyable"] as const).map((filter) => (
+            <button
+              key={filter}
+              className={[
+                styles.filterButton,
+                inputFocusFilter === filter ? styles.filterButtonActive : ""
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              onClick={() => setInputFocusFilter(filter)}
+              type="button"
+            >
+              {describeInputFocusFilter(locale, filter)}
+            </button>
+          ))}
+        </div>
 
         {isLoading && !overview ? (
-          <div className="codex-page-stack">
-            <div className="codex-thread-row codex-thread-row--placeholder" />
-            <div className="codex-thread-row codex-thread-row--placeholder" />
-            <div className="codex-thread-row codex-thread-row--placeholder" />
+          <div aria-hidden="true" className={styles.loadingList}>
+            <div className={styles.loadingRow} />
+            <div className={styles.loadingRow} />
+            <div className={styles.loadingRow} />
           </div>
         ) : filteredActionableQueue.length > 0 ? (
-          <section className="codex-list-section">
-            <div className="codex-list-section__head">
-              <div>
-                <p className="section-label">{isZh ? "收件箱列表" : "Inbox list"}</p>
-                <h2>{isZh ? "按优先级排序" : "Sorted by urgency"}</h2>
-              </div>
-              <span className="state-pill">
-                {isZh
-                  ? `${filteredActionableQueue.length} 项`
-                  : `${filteredActionableQueue.length} items`}
-              </span>
-            </div>
-            <div className="codex-thread-list">
-              {filteredActionableQueue.map((entry) => renderQueueRow(entry))}
-            </div>
-          </section>
+          <div className={styles.list}>{filteredActionableQueue.map((entry) => renderQueueRow(entry))}</div>
         ) : (
-          <section className="codex-empty-state">
-            <p className="eyebrow">
-              {inputFocusFilter === "all"
-                ? isZh
-                  ? "收件箱清空"
-                  : "Inbox clear"
-                : isZh
-                  ? "当前筛选为空"
-                  : "Nothing in this filter"}
-            </p>
-            <h2>
-              {inputFocusFilter === "all"
-                ? isZh
-                  ? "现在没有需要你点开的待办消息。"
-                  : "No messages need your attention right now."
-                : isZh
-                  ? "当前筛选下没有待办消息。"
-                  : "No inbox items match the current filter."}
-            </h2>
+          <section className={styles.empty}>
             <p>
               {inputFocusFilter === "all"
-                ? isZh
-                  ? "回到最近聊天，你仍然可以继续查看正在进行或刚完成的对话。"
-                  : "You can still jump back into recent chats and keep following active conversations."
-                : isZh
-                  ? "切回“全部”可以重新查看其它待处理事项。"
-                  : "Switch back to All to browse the rest of the waiting items again."}
+                ? localize(locale, {
+                    zh: "现在没有需要你点开的事项。",
+                    en: "Nothing needs your attention right now."
+                  })
+                : localize(locale, {
+                    zh: "当前筛选下没有待处理事项。",
+                    en: "No inbox items match this filter."
+                  })}
             </p>
+            <Link className={styles.emptyAction} href="/projects">
+              {isZh ? "回到聊天" : "Back to chats"}
+            </Link>
           </section>
         )}
       </div>

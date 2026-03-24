@@ -9,7 +9,8 @@
     "prebuild": "node -e \"require('node:fs').rmSync('.next', { recursive: true, force: true })\"",
     "build": "next build",
     "check": "next typegen && tsc --project tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "verify:smoke": "node ./scripts/verify-smoke.mjs"
   },
   "dependencies": {
     "@codex-remote/protocol": "workspace:*",

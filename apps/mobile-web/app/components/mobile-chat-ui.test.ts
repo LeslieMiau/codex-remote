@@ -40,7 +40,7 @@ vi.mock("next/navigation", async () => {
   };
 });
 
-import { CodexShell } from "./codex-shell";
+import { ChatsHomeShell } from "./chats-home-shell";
 import { DetailShell } from "./detail-shell";
 import { OverviewScreen } from "./overview-screen";
 import { QueueScreen } from "./queue-screen";
@@ -124,9 +124,11 @@ function buildQueueEntry(
 }
 
 function extractRowTitles(markup: string) {
-  return [...markup.matchAll(/<a class="codex-thread-row[^"]*"[^>]*>[\s\S]*?<strong>(.*?)<\/strong>/g)].map(
-    (match) => match[1]
-  );
+  return [
+    ...markup.matchAll(
+      /<a(?:[^>]*data-thread-row="[^"]+"[^>]*|[^>]*class="codex-thread-row[^"]*"[^>]*)>[\s\S]*?<strong>(.*?)<\/strong>/g
+    )
+  ].map((match) => match[1]);
 }
 
 describe("mobile chat shells", () => {
@@ -143,17 +145,16 @@ describe("mobile chat shells", () => {
   it("keeps only chats and settings in the top-level tab bar", () => {
     const markup = renderWithProviders(
       createElement(
-        CodexShell,
+        ChatsHomeShell,
         {
-          eyebrow: "Chats",
           subtitle: "Recent shared chats",
-          title: "Recent chats",
+          title: "Chats",
           children: createElement("div", null, "body")
         }
       )
     );
 
-    expect(markup).toContain("codex-tab-bar");
+    expect(markup).toContain('data-shell="chats-home"');
     expect(markup).toContain(">Chats<");
     expect(markup).toContain(">Settings<");
     expect(markup).not.toContain(">Queue<");
@@ -246,7 +247,10 @@ describe("mobile chat list rendering", () => {
 
     const markup = renderWithProviders(createElement(OverviewScreen));
 
-    expect(markup).toContain("codex-inbox-button");
+    expect(markup).toContain('data-overview-screen="chat-list"');
+    expect(markup).not.toContain("codex-home-hero");
+    expect(markup).not.toContain("codex-page-card--plain");
+    expect(markup).not.toContain("Like WeChat or Telegram");
     expect(extractRowTitles(markup)).toEqual([
       "Input thread",
       "Approval thread",

@@ -22,7 +22,6 @@ import {
 import {
   formatDateTime,
   localize,
-  translateQueueKind,
   translateThreadState,
   useLocale
 } from "../lib/locale";
@@ -32,7 +31,6 @@ import {
 } from "../lib/mobile-priority";
 import {
   describeNativeRequestActionLabel,
-  describeNativeRequestAttentionLabel,
   describeNativeRequestQueueLabel,
   describeQueueInputPreview,
   describeThreadPendingInputPreview,
@@ -41,9 +39,9 @@ import {
 import { filterThreadsForQuery } from "../lib/thread-search";
 import { setStoredThreadListRoute } from "../lib/thread-list-route-storage";
 import { setStoredLastActiveThread } from "../lib/thread-storage";
-import { CodexShell } from "./codex-shell";
+import { ChatsHomeShell } from "./chats-home-shell";
 import { NewThreadSheet } from "./new-thread-sheet";
-import { SkeletonCard } from "./skeleton";
+import styles from "./overview-screen.module.css";
 
 const POLL_INTERVAL_MS = 2_000;
 
@@ -190,6 +188,21 @@ function isDesktopRecoveryInputKind(kind: CodexQueueEntry["native_request_kind"]
   return isDesktopOrientedNativeRequest(kind);
 }
 
+function SearchIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path
+        d="m17 17 3.5 3.5M19 10.5a8.5 8.5 0 1 1-17 0 8.5 8.5 0 0 1 17 0Z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
 export function OverviewScreen() {
   const router = useRouter();
   const { locale } = useLocale();
@@ -267,6 +280,7 @@ export function OverviewScreen() {
         interval = setInterval(() => void load(true), POLL_INTERVAL_MS);
       }
     };
+
     document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
@@ -294,37 +308,10 @@ export function OverviewScreen() {
         .sort(compareQueueEntriesForMobile),
     [overview]
   );
-  const latestThread = visibleThreads[0] ?? null;
   const topPriorityEntry = actionableQueue[0] ?? null;
   const actionRequiredCount = actionableQueue.length;
   const runningCount =
     overview?.threads.filter((thread) => thread.state === "running").length ?? 0;
-  const desktopRecoveryInputEntries = useMemo(
-    () =>
-      actionableQueue.filter(
-        (entry) =>
-          entry.kind === "input" &&
-          isDesktopRecoveryInputKind(entry.native_request_kind)
-      ),
-    [actionableQueue]
-  );
-  const replyableInputEntries = useMemo(
-    () =>
-      actionableQueue.filter(
-        (entry) =>
-          entry.kind === "input" &&
-          !isDesktopRecoveryInputKind(entry.native_request_kind)
-      ),
-    [actionableQueue]
-  );
-  const otherActionCount = Math.max(
-    0,
-    actionRequiredCount - desktopRecoveryInputEntries.length - replyableInputEntries.length
-  );
-  const topPriorityInputKind =
-    topPriorityEntry?.kind === "input"
-      ? topPriorityEntry.native_request_kind ?? "user_input"
-      : undefined;
   const pendingInputKindsByThreadId = useMemo(() => {
     const kinds = new Map<string, CodexQueueEntry["native_request_kind"]>();
 
@@ -338,6 +325,26 @@ export function OverviewScreen() {
   }, [actionableQueue]);
   const capabilities = overview?.capabilities;
   const hasThreadSearch = threadQuery.trim().length > 0;
+
+  const subtitle = error
+    ? localize(locale, {
+        zh: "最近对话暂时没有同步完整，当前优先展示可用内容。",
+        en: "Recent chats did not sync cleanly, so the latest available content stays on screen."
+      })
+    : actionRequiredCount > 0
+      ? localize(locale, {
+          zh: `${actionRequiredCount} 条待处理消息，最近对话都在这里。`,
+          en: `${actionRequiredCount} waiting items, with recent chats right below.`
+        })
+      : runningCount > 0
+        ? localize(locale, {
+            zh: `${runningCount} 条对话还在进行中。`,
+            en: `${runningCount} chats are still running.`
+          })
+        : localize(locale, {
+            zh: "最近对话、待处理消息和新聊天入口都在这里。",
+            en: "Recent conversations, waiting items, and new chat entry all live here."
+          });
 
   async function handleCreateThread(input: { prompt: string; repoRoot: string }) {
     setIsCreatingThread(true);
@@ -370,46 +377,45 @@ export function OverviewScreen() {
     return (
       <Link
         key={thread.thread_id}
-        className={`codex-thread-row ${
-          thread.state === "running" ? "is-live" : ""
-        } ${thread.archived ? "is-archived" : ""} ${
-          isDesktopRecoveryInputKind(pendingInputKind) ? "is-desktop-recovery" : ""
-        }`}
+        className={`${styles.threadRow} ${
+          thread.state === "running" ? styles.threadRowLive : ""
+        } ${thread.archived ? styles.threadRowArchived : ""}`}
+        data-thread-row={thread.thread_id}
         href={buildThreadPath(thread.thread_id)}
         onClick={() => {
           setStoredThreadListRoute("/projects");
           setStoredLastActiveThread(thread.thread_id);
         }}
       >
-        <div className="codex-thread-row__avatar">
-          {getAvatarLabel(thread.project_label)}
+        <div className={styles.threadAvatar}>
+          {getAvatarLabel(thread.project_label || thread.title)}
         </div>
-        <div className="codex-thread-row__content">
-          <div className="codex-thread-row__head">
-            <div className="codex-thread-row__title-wrap">
+        <div className={styles.threadBody}>
+          <div className={styles.threadHead}>
+            <div className={styles.threadTitleWrap}>
               <strong>{thread.title}</strong>
-              <p>{describeThreadPreview(locale, thread, pendingInputKind)}</p>
+              <p className={styles.threadPreview}>
+                {describeThreadPreview(locale, thread, pendingInputKind)}
+              </p>
             </div>
-            <div className="codex-thread-row__aside">
-              <span className="codex-thread-row__time">
-                {formatDateTime(locale, thread.updated_at)}
-              </span>
-              {badgeLabel ? <span className="codex-thread-row__badge">{badgeLabel}</span> : null}
+            <div className={styles.threadAside}>
+              <span className={styles.threadTime}>{formatDateTime(locale, thread.updated_at)}</span>
+              {badgeLabel ? <span className={styles.threadBadge}>{badgeLabel}</span> : null}
             </div>
           </div>
-          <div className="codex-thread-row__meta">
-            <span className="status-dot">{thread.project_label}</span>
-            <span className="status-dot">{getRepoTail(thread.repo_root)}</span>
-            {stateLabel ? <span className="status-dot">{stateLabel}</span> : null}
+          <div className={styles.threadMeta}>
+            <span className={styles.metaTag}>{thread.project_label}</span>
+            <span className={styles.metaTag}>{getRepoTail(thread.repo_root)}</span>
+            {stateLabel ? <span className={styles.metaTag}>{stateLabel}</span> : null}
             {thread.archived ? (
-              <span className="status-dot">
+              <span className={styles.metaTag}>
                 {localize(locale, { zh: "已归档", en: "Archived" })}
               </span>
             ) : null}
             {pendingInputKind ? (
               <span
-                className={`status-dot ${
-                  isDesktopRecoveryInputKind(pendingInputKind) ? "tone-warning" : ""
+                className={`${styles.metaTag} ${
+                  isDesktopRecoveryInputKind(pendingInputKind) ? styles.metaTagWarning : ""
                 }`}
               >
                 {describeNativeRequestQueueLabel(locale, pendingInputKind)}
@@ -421,196 +427,306 @@ export function OverviewScreen() {
     );
   }
 
+  function renderLoadingRows() {
+    return (
+      <div aria-hidden="true" className={styles.loadingList}>
+        {Array.from({ length: 5 }, (_, index) => (
+          <div className={styles.loadingRow} key={index}>
+            <div className={styles.loadingAvatar} />
+            <div className={styles.loadingCopy}>
+              <div className={`${styles.loadingLine} ${styles.loadingLinePrimary}`} />
+              <div className={`${styles.loadingLine} ${styles.loadingLineSecondary}`} />
+              <div className={styles.loadingMeta}>
+                <div className={styles.loadingChip} />
+                <div className={styles.loadingChip} />
+              </div>
+            </div>
+            <div className={`${styles.loadingLine} ${styles.loadingLineTertiary}`} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <>
-      <CodexShell
-        eyebrow={isZh ? "聊天" : "Chats"}
-        subtitle={
-          isZh
-            ? "像微信和 Telegram 一样，最近对话、待处理消息和新聊天入口都聚合在这里。"
-            : "Like WeChat or Telegram, your recent chats, urgent inbox items, and new chat entry point all live here."
-        }
-        title={isZh ? "最近对话" : "Recent chats"}
+      <ChatsHomeShell
+        subtitle={subtitle}
+        title={isZh ? "聊天" : "Chats"}
         actions={
-          <div className="codex-header-cues">
-            <Link className="chrome-button codex-inbox-button" href="/queue">
+          <div className={styles.headerActions}>
+            <Link className={styles.headerButton} href="/queue">
               <span>{isZh ? "收件箱" : "Inbox"}</span>
               {actionRequiredCount > 0 ? (
-                <span className="codex-inbox-button__badge">
+                <span className={styles.headerButtonBadge}>
                   {actionRequiredCount > 9 ? "9+" : actionRequiredCount}
                 </span>
               ) : null}
             </Link>
             {capabilities?.shared_thread_create ? (
               <button
-                className="chrome-button"
+                className={styles.headerButtonPrimary}
                 disabled={isCreatingThread}
-                onClick={() => setIsNewThreadOpen(true)}
+                onClick={() => {
+                  setCreateError(null);
+                  setIsNewThreadOpen(true);
+                }}
                 type="button"
               >
                 {isZh ? "新聊天" : "New chat"}
               </button>
             ) : null}
-            <button
-              className="chrome-button"
-              onClick={() => setShowArchived((current) => !current)}
-              type="button"
-            >
-              {showArchived
-                ? localize(locale, { zh: "隐藏归档", en: "Hide archived" })
-                : localize(locale, { zh: "显示归档", en: "Show archived" })}
-            </button>
-            {isRefreshing ? (
-              <span className="status-dot">{isZh ? "同步中" : "Syncing"}</span>
-            ) : null}
           </div>
         }
       >
-        {isLoading && !overview ? (
-          <div className="codex-page-stack">
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-          </div>
-        ) : (
-          <div className="codex-page-stack codex-page-stack--home">
-            {error ? (
-              <section
-                aria-live="assertive"
-                className={`codex-status-strip codex-status-strip--stacked ${
-                  overview ? "tone-warning" : "tone-danger"
-                }`}
-                role="alert"
-              >
-                <div className="codex-status-strip__copy">
-                  <p className="section-label">
-                    {overview
-                      ? localize(locale, {
-                          zh: "显示缓存内容",
-                          en: "Showing cached chats"
-                        })
-                      : localize(locale, {
-                          zh: "连接异常",
-                          en: "Connection issue"
-                        })}
-                  </p>
-                  <strong>
-                    {overview
-                      ? localize(locale, {
-                          zh: "最近对话这次没同步成功，先继续显示上一份内容。",
-                          en: "This refresh failed, so the last synced chats are still on screen."
-                        })
-                      : localize(locale, {
-                          zh: "最近对话暂时没有同步成功",
-                          en: "Recent chats did not sync this time"
-                        })}
-                  </strong>
-                  <p>
-                    {overview
-                      ? localize(locale, {
-                          zh: lastSuccessfulSyncAt
-                            ? `上次成功同步时间：${formatDateTime(locale, lastSuccessfulSyncAt)}。${error}`
-                            : `当前先展示已缓存的聊天列表。${error}`,
-                          en: lastSuccessfulSyncAt
-                            ? `Last successful sync: ${formatDateTime(locale, lastSuccessfulSyncAt)}. ${error}`
-                            : `Showing the cached chat list for now. ${error}`
-                        })
-                      : error}
-                  </p>
-                </div>
-              </section>
-            ) : null}
-
-            <section className="codex-home-hero">
-              <div className="codex-home-hero__copy">
-                <p className="section-label">
-                  {topPriorityInputKind
-                    ? describeNativeRequestAttentionLabel(locale, topPriorityInputKind)
-                    : isZh
-                      ? "最近聊天"
-                      : "Recent chats"}
+        <div className={styles.page} data-overview-screen="chat-list">
+          {error ? (
+            <section
+              aria-live="assertive"
+              className={`${styles.notice} ${
+                overview ? styles.noticeWarning : styles.noticeDanger
+              }`}
+              role="alert"
+            >
+              <div className={styles.noticeCopy}>
+                <p className={styles.noticeLabel}>
+                  {overview
+                    ? localize(locale, {
+                        zh: "显示缓存内容",
+                        en: "Showing cached chats"
+                      })
+                    : localize(locale, {
+                        zh: "连接异常",
+                        en: "Connection issue"
+                      })}
                 </p>
                 <strong>
-                  {topPriorityEntry
-                    ? topPriorityEntry.title
-                    : latestThread
-                      ? latestThread.title
-                      : localize(locale, {
-                          zh: "从手机发起第一条共享聊天",
-                          en: "Start the first shared chat from your phone"
-                        })}
+                  {overview
+                    ? localize(locale, {
+                        zh: "最近对话这次没同步成功，先继续显示上一份内容。",
+                        en: "This refresh failed, so the last synced chats are still on screen."
+                      })
+                    : localize(locale, {
+                        zh: "最近对话暂时没有同步成功。",
+                        en: "Recent chats did not sync this time."
+                      })}
                 </strong>
                 <p>
-                  {topPriorityEntry
-                    ? describeQueuePreview(locale, topPriorityEntry)
-                    : latestThread
-                      ? localize(locale, {
-                          zh: `最近活跃于 ${formatDateTime(locale, latestThread.updated_at)}，点进去就能接着聊。`,
-                          en: `Active ${formatDateTime(locale, latestThread.updated_at)}. Open it and keep the conversation going.`
-                        })
-                      : localize(locale, {
-                          zh: "这里会像聊天应用一样显示最近对话，优先把待回复和待处理消息放在前面。",
-                          en: "This screen behaves like a chat app: recent conversations stay front and center, with waiting items surfaced first."
-                        })}
+                  {overview
+                    ? localize(locale, {
+                        zh: lastSuccessfulSyncAt
+                          ? `上次成功同步时间：${formatDateTime(locale, lastSuccessfulSyncAt)}。${error}`
+                          : `当前先展示已缓存的聊天列表。${error}`,
+                        en: lastSuccessfulSyncAt
+                          ? `Last successful sync: ${formatDateTime(locale, lastSuccessfulSyncAt)}. ${error}`
+                          : `Showing the cached chat list for now. ${error}`
+                      })
+                    : error}
                 </p>
               </div>
+            </section>
+          ) : null}
 
-              <div className="codex-home-hero__pills">
-                {replyableInputEntries.length > 0 ? (
-                  <span className="status-dot">
-                    {isZh
-                      ? `${replyableInputEntries.length} 条手机可回`
-                      : `${replyableInputEntries.length} reply here`}
-                  </span>
-                ) : null}
-                {desktopRecoveryInputEntries.length > 0 ? (
-                  <span className="status-dot tone-warning">
-                    {isZh
-                      ? `${desktopRecoveryInputEntries.length} 条回桌面`
-                      : `${desktopRecoveryInputEntries.length} desktop`}
-                  </span>
-                ) : null}
-                {otherActionCount > 0 ? (
-                  <span className="status-dot">
-                    {isZh ? `${otherActionCount} 条其它事项` : `${otherActionCount} other`}
-                  </span>
-                ) : null}
-                <span className="status-dot">
-                  {isZh ? `${runningCount} 条进行中` : `${runningCount} active`}
-                </span>
+          {topPriorityEntry && !hasThreadSearch ? (
+            <section className={styles.notice}>
+              <div className={styles.noticeCopy}>
+                <p className={styles.noticeLabel}>
+                  {localize(locale, { zh: "待处理消息", en: "Waiting item" })}
+                </p>
+                <strong>{topPriorityEntry.title}</strong>
+                <p>{describeQueuePreview(locale, topPriorityEntry)}</p>
               </div>
+              <Link
+                className={styles.noticeAction}
+                href={buildActionHref(topPriorityEntry)}
+                onClick={() => {
+                  setStoredThreadListRoute("/projects");
+                  setStoredLastActiveThread(topPriorityEntry.thread_id);
+                }}
+              >
+                {topPriorityEntry.kind === "input"
+                  ? describeNativeRequestActionLabel(
+                      locale,
+                      topPriorityEntry.native_request_kind ?? "user_input"
+                    )
+                  : localize(locale, { zh: "去处理", en: "Handle" })}
+              </Link>
+            </section>
+          ) : null}
 
-              <div className="codex-home-hero__actions">
-                {topPriorityEntry ? (
-                  <Link
-                    className="primary-button"
-                    href={buildActionHref(topPriorityEntry)}
-                    onClick={() => {
-                      setStoredThreadListRoute("/projects");
-                      setStoredLastActiveThread(topPriorityEntry.thread_id);
-                    }}
-                  >
-                    {topPriorityEntry.kind === "input"
-                      ? describeNativeRequestActionLabel(
-                          locale,
-                          topPriorityEntry.native_request_kind ?? "user_input"
-                        )
-                      : localize(locale, { zh: "马上处理", en: "Open now" })}
-                  </Link>
-                ) : latestThread ? (
-                  <Link
-                    className="primary-button"
-                    href={buildThreadPath(latestThread.thread_id)}
-                    onClick={() => {
-                      setStoredThreadListRoute("/projects");
-                      setStoredLastActiveThread(latestThread.thread_id);
-                    }}
-                  >
-                    {isZh ? "继续聊天" : "Continue chat"}
-                  </Link>
-                ) : capabilities?.shared_thread_create ? (
+          <section className={styles.toolbar}>
+            <label className={styles.searchField}>
+              <SearchIcon />
+              <input
+                onChange={(event) => setThreadQuery(event.target.value)}
+                placeholder={
+                  isZh ? "搜索标题、项目名或仓库路径" : "Search title, project, or repo path"
+                }
+                type="search"
+                value={threadQuery}
+              />
+            </label>
+            <div className={styles.toolbarMeta}>
+              {hasThreadSearch ? (
+                <button
+                  className={styles.clearButton}
+                  onClick={() => setThreadQuery("")}
+                  type="button"
+                >
+                  {isZh ? "清空" : "Clear"}
+                </button>
+              ) : null}
+              <button
+                className={`${styles.filterButton} ${
+                  showArchived ? styles.filterButtonActive : ""
+                }`}
+                onClick={() => setShowArchived((current) => !current)}
+                type="button"
+              >
+                {showArchived
+                  ? localize(locale, { zh: "隐藏归档", en: "Hide archived" })
+                  : localize(locale, { zh: "显示归档", en: "Show archived" })}
+              </button>
+            </div>
+          </section>
+
+          <div className={styles.summaryRow}>
+            <span
+              className={`${styles.summaryPill} ${
+                actionRequiredCount > 0 ? styles.summaryPillAccent : ""
+              }`}
+            >
+              {actionRequiredCount > 0
+                ? localize(locale, {
+                    zh: `${actionRequiredCount} 条待处理`,
+                    en: `${actionRequiredCount} waiting`
+                  })
+                : localize(locale, {
+                    zh: "当前没有待处理消息",
+                    en: "No waiting items"
+                  })}
+            </span>
+            <span className={styles.summaryPill}>
+              {localize(locale, {
+                zh: `${runningCount} 条进行中`,
+                en: `${runningCount} active`
+              })}
+            </span>
+            {hasThreadSearch ? (
+              <span className={styles.summaryPill}>
+                {localize(locale, {
+                  zh:
+                    matchingThreadCount > 0
+                      ? `找到 ${matchingThreadCount} 条聊天`
+                      : "没有找到匹配聊天",
+                  en:
+                    matchingThreadCount > 0
+                      ? `${matchingThreadCount} matching chats`
+                      : "No matching chats"
+                })}
+              </span>
+            ) : null}
+            {isRefreshing ? (
+              <span className={styles.summaryPill}>
+                {localize(locale, { zh: "同步中", en: "Syncing" })}
+              </span>
+            ) : null}
+          </div>
+
+          {createError ? (
+            <section
+              aria-live="assertive"
+              className={`${styles.notice} ${styles.noticeDanger}`}
+              role="alert"
+            >
+              <div className={styles.noticeCopy}>
+                <p className={styles.noticeLabel}>
+                  {localize(locale, { zh: "新聊天失败", en: "Failed to start chat" })}
+                </p>
+                <strong>
+                  {localize(locale, {
+                    zh: "这次没有成功创建共享聊天。",
+                    en: "A shared chat was not created this time."
+                  })}
+                </strong>
+                <p>{createError}</p>
+              </div>
+            </section>
+          ) : null}
+
+          <div className={styles.listHeader}>
+            <div className={styles.listHeaderCopy}>
+              <p className={styles.listLabel}>
+                {hasThreadSearch
+                  ? localize(locale, { zh: "搜索结果", en: "Search results" })
+                  : localize(locale, { zh: "最近聊天", en: "Recent chats" })}
+              </p>
+              <h2>
+                {showArchived
+                  ? localize(locale, { zh: "聊天列表", en: "Chat list" })
+                  : localize(locale, { zh: "按最近活跃排序", en: "Sorted by recent activity" })}
+              </h2>
+            </div>
+            <span className={styles.listCount}>
+              {isLoading && !overview
+                ? localize(locale, { zh: "正在加载", en: "Loading" })
+                : localize(locale, {
+                    zh: `${matchingThreadCount} 条聊天`,
+                    en: `${matchingThreadCount} chats`
+                  })}
+            </span>
+          </div>
+
+          {isLoading && !overview ? (
+            renderLoadingRows()
+          ) : visibleThreads.length > 0 ? (
+            <div className={styles.list}>
+              {visibleThreads.map((thread) => renderThreadRow(thread))}
+            </div>
+          ) : (
+            <section className={styles.emptyState}>
+              <p>
+                {hasThreadSearch
+                  ? localize(locale, {
+                      zh: "没有找到匹配聊天。",
+                      en: "No matching chats."
+                    })
+                  : showArchived
+                    ? localize(locale, {
+                        zh: "当前没有归档聊天。",
+                        en: "There are no archived chats right now."
+                      })
+                    : localize(locale, {
+                        zh: "还没有共享聊天。",
+                        en: "There are no shared chats yet."
+                      })}
+              </p>
+              <h2>
+                {hasThreadSearch
+                  ? localize(locale, {
+                      zh: "换个关键词再试试。",
+                      en: "Try a different keyword."
+                    })
+                  : localize(locale, {
+                      zh: "从这里开始第一条对话。",
+                      en: "Start the first conversation from here."
+                    })}
+              </h2>
+              <p>
+                {hasThreadSearch
+                  ? localize(locale, {
+                      zh: "可以继续按标题、项目名或仓库路径搜索。",
+                      en: "Search by title, project name, or repo path."
+                    })
+                  : localize(locale, {
+                      zh: "新聊天会直接连到共享 Codex 会话。",
+                      en: "A new chat opens the shared Codex conversation directly."
+                    })}
+              </p>
+              <div className={styles.emptyActions}>
+                {capabilities?.shared_thread_create ? (
                   <button
-                    className="primary-button"
+                    className={styles.emptyActionPrimary}
                     disabled={isCreatingThread}
                     onClick={() => {
                       setCreateError(null);
@@ -621,143 +737,14 @@ export function OverviewScreen() {
                     {isZh ? "新聊天" : "New chat"}
                   </button>
                 ) : null}
-
-                <Link className="secondary-button" href="/queue">
-                  {actionRequiredCount > 0
-                    ? localize(locale, { zh: "打开收件箱", en: "Open inbox" })
-                    : localize(locale, { zh: "查看收件箱", en: "View inbox" })}
+                <Link className={styles.emptyAction} href="/queue">
+                  {isZh ? "查看收件箱" : "View inbox"}
                 </Link>
               </div>
             </section>
-
-            <section className="codex-page-card codex-page-card--plain threads-home__search-card">
-              <div className="threads-home__search-row">
-                <label className="codex-form-field threads-home__search-field">
-                  <span className="section-label">{isZh ? "查找聊天" : "Find a chat"}</span>
-                  <input
-                    className="chrome-input"
-                    onChange={(event) => setThreadQuery(event.target.value)}
-                    placeholder={
-                      isZh
-                        ? "按标题、工作区或仓库路径搜索"
-                        : "Search by title, workspace, or repo path"
-                    }
-                    type="search"
-                    value={threadQuery}
-                  />
-                </label>
-                {hasThreadSearch ? (
-                  <button
-                    className="chrome-button"
-                    onClick={() => setThreadQuery("")}
-                    type="button"
-                  >
-                    {isZh ? "清空" : "Clear"}
-                  </button>
-                ) : null}
-              </div>
-              <p className="threads-home__search-note">
-                {localize(locale, {
-                  zh: "想找旧聊天时，直接搜标题、项目名或仓库路径就行。",
-                  en: "Search by title, project name, or repo path when you need an older thread."
-                })}
-              </p>
-              {hasThreadSearch ? (
-                <div className="codex-inline-pills threads-home__search-meta">
-                  <span className="status-dot">
-                    {localize(locale, {
-                      zh:
-                        matchingThreadCount > 0
-                          ? `找到 ${matchingThreadCount} 条聊天`
-                          : "没有找到匹配聊天",
-                      en:
-                        matchingThreadCount > 0
-                          ? `${matchingThreadCount} matching chats`
-                          : "No matching chats"
-                    })}
-                  </span>
-                </div>
-              ) : null}
-            </section>
-
-            {createError ? (
-              <section
-                aria-live="assertive"
-                className="codex-status-strip codex-status-strip--stacked tone-danger"
-                role="alert"
-              >
-                <div className="codex-status-strip__copy">
-                  <p className="section-label">{isZh ? "新聊天失败" : "Failed to start chat"}</p>
-                  <strong>
-                    {isZh ? "这次没有成功创建共享聊天。" : "A shared chat was not created this time."}
-                  </strong>
-                  <p>{createError}</p>
-                </div>
-              </section>
-            ) : null}
-
-            <section className="codex-list-section">
-              <div className="codex-list-section__head">
-                <div>
-                  <p className="section-label">{isZh ? "最近聊天" : "Recent chats"}</p>
-                  <h2>
-                    {hasThreadSearch
-                      ? localize(locale, { zh: "搜索结果", en: "Search results" })
-                      : localize(locale, { zh: "按最近活跃排序", en: "Sorted by recent activity" })}
-                  </h2>
-                </div>
-                <span className="state-pill">
-                  {isZh ? `${matchingThreadCount} 条聊天` : `${matchingThreadCount} chats`}
-                </span>
-              </div>
-
-              {visibleThreads.length > 0 ? (
-                <div className="codex-thread-list">
-                  {visibleThreads.map((thread) => renderThreadRow(thread))}
-                </div>
-              ) : (
-                <section className="codex-empty-state">
-                  <p className="eyebrow">
-                    {hasThreadSearch
-                      ? isZh
-                        ? "没有匹配聊天"
-                        : "No matching chats"
-                      : showArchived
-                        ? isZh
-                          ? "归档为空"
-                          : "No archived chats"
-                        : isZh
-                          ? "还没有聊天"
-                          : "No chats yet"}
-                  </p>
-                  <h2>
-                    {hasThreadSearch
-                      ? isZh
-                        ? "换个关键词再试试。"
-                        : "Try a different keyword."
-                      : showArchived
-                        ? isZh
-                          ? "当前没有归档聊天。"
-                          : "There are no archived chats right now."
-                        : isZh
-                          ? "从这里发起第一条聊天。"
-                          : "Start the first chat from here."}
-                  </h2>
-                  <p>
-                    {hasThreadSearch
-                      ? isZh
-                        ? "可以继续按标题、项目名或仓库路径搜索。"
-                        : "Try searching by title, project name, or repo path."
-                      : isZh
-                        ? "新聊天会直接连到共享 Codex 会话。"
-                        : "A new chat connects directly to the shared Codex conversation."}
-                  </p>
-                </section>
-              )}
-            </section>
-          </div>
-        )}
-      </CodexShell>
+          )}
+        </div>
+      </ChatsHomeShell>
 
       <NewThreadSheet
         disableDismiss={isCreatingThread}

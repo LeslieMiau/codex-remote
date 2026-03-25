@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   getDisplayThreadTitle,
-  isRecoveryFallbackThread
+  hasBlockingThreadAttention,
+  isRecoveryFallbackThread,
+  shouldHideThreadFromMobileList
 } from "./chat-thread-presentation";
 
 describe("chat thread presentation", () => {
@@ -41,5 +43,74 @@ describe("chat thread presentation", () => {
         title: "Fix mobile chat layout"
       })
     ).toBe("Fix mobile chat layout");
+  });
+
+  it("treats approvals, input, review, and hard failures as blocking attention", () => {
+    expect(
+      hasBlockingThreadAttention({
+        archived: false,
+        pending_approvals: 0,
+        pending_native_requests: 1,
+        pending_patches: 0,
+        project_label: "repo",
+        source: "codex-app-server",
+        state: "waiting_input",
+        title: "Needs input"
+      })
+    ).toBe(true);
+
+    expect(
+      hasBlockingThreadAttention({
+        archived: false,
+        pending_approvals: 0,
+        pending_native_requests: 0,
+        pending_patches: 0,
+        project_label: "repo",
+        source: "codex-app-server",
+        state: "running",
+        title: "Still running"
+      })
+    ).toBe(false);
+  });
+
+  it("hides archived and recovery fallback threads from the mobile list by default", () => {
+    expect(
+      shouldHideThreadFromMobileList({
+        archived: true,
+        pending_approvals: 0,
+        pending_native_requests: 0,
+        pending_patches: 0,
+        project_label: "repo",
+        source: "codex-app-server",
+        state: "ready",
+        title: "Archived chat"
+      })
+    ).toBe(true);
+
+    expect(
+      shouldHideThreadFromMobileList({
+        archived: false,
+        pending_approvals: 0,
+        pending_native_requests: 0,
+        pending_patches: 0,
+        project_label: "Recovered project",
+        source: "gateway_fallback",
+        state: "ready",
+        title: "Recovered thread"
+      })
+    ).toBe(true);
+
+    expect(
+      shouldHideThreadFromMobileList({
+        archived: false,
+        pending_approvals: 1,
+        pending_native_requests: 0,
+        pending_patches: 0,
+        project_label: "Recovered project",
+        source: "gateway_fallback",
+        state: "waiting_approval",
+        title: "Recovered thread"
+      })
+    ).toBe(false);
   });
 });

@@ -16,13 +16,11 @@ import {
   setCachedOverview
 } from "../lib/client-cache";
 import {
-  buildThreadPatchPath,
   buildThreadPath
 } from "../lib/codex-paths";
 import {
   formatDateTime,
   localize,
-  translateThreadState,
   useLocale
 } from "../lib/locale";
 import {
@@ -30,15 +28,18 @@ import {
   compareThreadsForMobile
 } from "../lib/mobile-priority";
 import {
-  describeNativeRequestActionLabel,
-  describeNativeRequestQueueLabel,
   describeQueueInputPreview,
-  describeThreadPendingInputPreview,
-  isDesktopOrientedNativeRequest
+  describeNativeRequestQueueLabel,
+  describeThreadPendingInputPreview
 } from "../lib/native-input-copy";
 import { filterThreadsForQuery } from "../lib/thread-search";
 import { setStoredThreadListRoute } from "../lib/thread-list-route-storage";
 import { setStoredLastActiveThread } from "../lib/thread-storage";
+import {
+  getDisplayThreadTitle,
+  hasBlockingThreadAttention,
+  shouldHideThreadFromMobileList
+} from "../lib/chat-thread-presentation";
 import { ChatsHomeShell } from "./chats-home-shell";
 import { NewThreadSheet } from "./new-thread-sheet";
 import styles from "./overview-screen.module.css";
@@ -54,23 +55,13 @@ function getRepoTail(repoRoot: string) {
   return parts[parts.length - 1] ?? repoRoot;
 }
 
-function buildActionHref(entry: CodexQueueEntry) {
-  if (entry.patch_id) {
-    return buildThreadPatchPath(entry.thread_id, entry.patch_id);
-  }
-  return buildThreadPath(entry.thread_id);
-}
-
-function getThreadBadgeLabel(locale: "zh" | "en", thread: CodexThread) {
+function getThreadBadgeLabel(thread: CodexThread) {
   const pendingCount =
     thread.pending_approvals + thread.pending_patches + thread.pending_native_requests;
   if (pendingCount > 0) {
     return pendingCount > 9 ? "9+" : String(pendingCount);
   }
-  if (thread.state === "running") {
-    return localize(locale, { zh: "LIVE", en: "LIVE" });
-  }
-  if (thread.state === "failed" || thread.state === "interrupted") {
+  if (thread.state === "failed" || thread.state === "system_error") {
     return "!";
   }
   return null;
@@ -81,111 +72,32 @@ function describeThreadPreview(
   thread: CodexThread,
   nativeRequestKind?: CodexQueueEntry["native_request_kind"]
 ) {
-  if (thread.archived) {
-    return localize(locale, {
-      zh: "这条聊天已归档，需要时仍然可以重新打开。",
-      en: "This chat is archived, but you can still reopen it when needed."
-    });
-  }
-
   if (thread.pending_native_requests > 0) {
     return describeThreadPendingInputPreview(locale, nativeRequestKind);
   }
 
-  if (thread.pending_approvals > 0 && thread.pending_patches > 0) {
-    return localize(locale, {
-      zh: `${thread.pending_approvals} 个批准和 ${thread.pending_patches} 个补丁在等你看。`,
-      en: `${thread.pending_approvals} approvals and ${thread.pending_patches} patch reviews are waiting.`
-    });
-  }
-
   if (thread.pending_approvals > 0) {
     return localize(locale, {
-      zh: `${thread.pending_approvals} 个批准待确认。`,
-      en: `${thread.pending_approvals} approvals are waiting for you.`
+      zh: "等待批准",
+      en: "Approval needed"
     });
   }
 
   if (thread.pending_patches > 0) {
     return localize(locale, {
-      zh: `${thread.pending_patches} 个补丁已经准备好审查。`,
-      en: `${thread.pending_patches} patches are ready to review.`
+      zh: "等待审查",
+      en: "Review needed"
     });
   }
 
-  switch (thread.state) {
-    case "running":
-      return localize(locale, {
-        zh: "Codex 还在这条聊天里继续生成内容。",
-        en: "Codex is still typing in this chat."
-      });
-    case "failed":
-      return localize(locale, {
-        zh: "上一次处理没有完成，点进来接着收尾。",
-        en: "The last run failed. Open this chat to pick it back up."
-      });
-    case "interrupted":
-      return localize(locale, {
-        zh: "这条聊天暂停在中途，回来就能继续。",
-        en: "This chat paused mid-run. Reopen it to continue."
-      });
-    case "waiting_input":
-      return localize(locale, {
-        zh: "Codex 在等你的下一条消息。",
-        en: "Codex is waiting for your next message."
-      });
-    case "waiting_approval":
-      return localize(locale, {
-        zh: "这条聊天已经发来新的批准请求。",
-        en: "This chat has a new approval request."
-      });
-    case "needs_review":
-      return localize(locale, {
-        zh: "这条聊天里有新的补丁等你看。",
-        en: "There is a patch waiting inside this chat."
-      });
-    default:
-      return localize(locale, {
-        zh: "聊天已经同步，可以随时继续。",
-        en: "This chat is synced and ready whenever you are."
-      });
+  if (thread.state === "failed" || thread.state === "system_error") {
+    return localize(locale, {
+      zh: "需要重新处理",
+      en: "Needs follow-up"
+    });
   }
-}
 
-function describeQueuePreview(locale: "zh" | "en", entry: CodexQueueEntry) {
-  const detail = entry.summary ?? entry.status;
-  switch (entry.kind) {
-    case "input":
-      return describeQueueInputPreview(
-        locale,
-        entry.native_request_kind ?? "user_input",
-        detail
-      );
-    case "approval":
-      return localize(locale, {
-        zh: `新的批准请求到了。${detail}`,
-        en: `A new approval request came in. ${detail}`
-      });
-    case "patch":
-      return localize(locale, {
-        zh: `新的补丁已经准备好。${detail}`,
-        en: `A patch is ready for review. ${detail}`
-      });
-    case "failed":
-      return localize(locale, {
-        zh: `这条聊天需要你回来处理。${detail}`,
-        en: `This chat needs a follow-up. ${detail}`
-      });
-    default:
-      return localize(locale, {
-        zh: `Codex 还在继续。${detail}`,
-        en: `Codex is still working. ${detail}`
-      });
-  }
-}
-
-function isDesktopRecoveryInputKind(kind: CodexQueueEntry["native_request_kind"]) {
-  return isDesktopOrientedNativeRequest(kind);
+  return "";
 }
 
 function SearchIcon() {
@@ -213,10 +125,9 @@ export function OverviewScreen() {
   const [error, setError] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(!getCachedOverview());
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [, setIsRefreshing] = useState(false);
   const [isNewThreadOpen, setIsNewThreadOpen] = useState(false);
   const [isCreatingThread, setIsCreatingThread] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
   const [threadQuery, setThreadQuery] = useState("");
   const [lastSuccessfulSyncAt, setLastSuccessfulSyncAt] = useState<string | null>(null);
   const inFlightRef = useRef(false);
@@ -241,9 +152,7 @@ export function OverviewScreen() {
       }
 
       try {
-        const nextOverview = await getCodexOverview({
-          includeArchived: showArchived
-        });
+        const nextOverview = await getCodexOverview();
         if (!cancelled) {
           setOverview(nextOverview);
           setCachedOverview(nextOverview);
@@ -290,14 +199,17 @@ export function OverviewScreen() {
       }
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [showArchived]);
+  }, []);
 
   const filteredThreads = useMemo(
     () => filterThreadsForQuery(overview?.threads ?? [], threadQuery),
     [overview, threadQuery]
   );
   const visibleThreads = useMemo(
-    () => [...filteredThreads].sort(compareThreadsForMobile),
+    () =>
+      [...filteredThreads]
+        .filter((thread) => !shouldHideThreadFromMobileList(thread))
+        .sort(compareThreadsForMobile),
     [filteredThreads]
   );
   const matchingThreadCount = visibleThreads.length;
@@ -308,10 +220,7 @@ export function OverviewScreen() {
         .sort(compareQueueEntriesForMobile),
     [overview]
   );
-  const topPriorityEntry = actionableQueue[0] ?? null;
   const actionRequiredCount = actionableQueue.length;
-  const runningCount =
-    overview?.threads.filter((thread) => thread.state === "running").length ?? 0;
   const pendingInputKindsByThreadId = useMemo(() => {
     const kinds = new Map<string, CodexQueueEntry["native_request_kind"]>();
 
@@ -325,26 +234,6 @@ export function OverviewScreen() {
   }, [actionableQueue]);
   const capabilities = overview?.capabilities;
   const hasThreadSearch = threadQuery.trim().length > 0;
-
-  const subtitle = error
-    ? localize(locale, {
-        zh: "最近对话暂时没有同步完整，当前优先展示可用内容。",
-        en: "Recent chats did not sync cleanly, so the latest available content stays on screen."
-      })
-    : actionRequiredCount > 0
-      ? localize(locale, {
-          zh: `${actionRequiredCount} 条待处理消息，最近对话都在这里。`,
-          en: `${actionRequiredCount} waiting items, with recent chats right below.`
-        })
-      : runningCount > 0
-        ? localize(locale, {
-            zh: `${runningCount} 条对话还在进行中。`,
-            en: `${runningCount} chats are still running.`
-          })
-        : localize(locale, {
-            zh: "最近对话、待处理消息和新聊天入口都在这里。",
-            en: "Recent conversations, waiting items, and new chat entry all live here."
-          });
 
   async function handleCreateThread(input: { prompt: string; repoRoot: string }) {
     setIsCreatingThread(true);
@@ -370,16 +259,24 @@ export function OverviewScreen() {
 
   function renderThreadRow(thread: CodexThread) {
     const pendingInputKind = pendingInputKindsByThreadId.get(thread.thread_id);
-    const badgeLabel = getThreadBadgeLabel(locale, thread);
-    const stateLabel =
-      thread.state === "ready" ? null : translateThreadState(locale, thread.state);
+    const badgeLabel = getThreadBadgeLabel(thread);
+    const preview = describeThreadPreview(locale, thread, pendingInputKind);
+    const displayTitle = getDisplayThreadTitle(locale, thread);
+    const blockingTag =
+      thread.pending_native_requests > 0
+        ? describeNativeRequestQueueLabel(locale, pendingInputKind ?? "user_input")
+        : thread.pending_approvals > 0
+          ? localize(locale, { zh: "待批准", en: "Approval" })
+          : thread.pending_patches > 0
+            ? localize(locale, { zh: "待审查", en: "Review" })
+            : thread.state === "failed" || thread.state === "system_error"
+              ? localize(locale, { zh: "失败", en: "Failed" })
+              : null;
 
     return (
       <Link
         key={thread.thread_id}
-        className={`${styles.threadRow} ${
-          thread.state === "running" ? styles.threadRowLive : ""
-        } ${thread.archived ? styles.threadRowArchived : ""}`}
+        className={styles.threadRow}
         data-thread-row={thread.thread_id}
         href={buildThreadPath(thread.thread_id)}
         onClick={() => {
@@ -393,10 +290,8 @@ export function OverviewScreen() {
         <div className={styles.threadBody}>
           <div className={styles.threadHead}>
             <div className={styles.threadTitleWrap}>
-              <strong>{thread.title}</strong>
-              <p className={styles.threadPreview}>
-                {describeThreadPreview(locale, thread, pendingInputKind)}
-              </p>
+              <strong>{displayTitle}</strong>
+              {preview ? <p className={styles.threadPreview}>{preview}</p> : null}
             </div>
             <div className={styles.threadAside}>
               <span className={styles.threadTime}>{formatDateTime(locale, thread.updated_at)}</span>
@@ -406,19 +301,13 @@ export function OverviewScreen() {
           <div className={styles.threadMeta}>
             <span className={styles.metaTag}>{thread.project_label}</span>
             <span className={styles.metaTag}>{getRepoTail(thread.repo_root)}</span>
-            {stateLabel ? <span className={styles.metaTag}>{stateLabel}</span> : null}
-            {thread.archived ? (
-              <span className={styles.metaTag}>
-                {localize(locale, { zh: "已归档", en: "Archived" })}
-              </span>
-            ) : null}
-            {pendingInputKind ? (
+            {blockingTag ? (
               <span
                 className={`${styles.metaTag} ${
-                  isDesktopRecoveryInputKind(pendingInputKind) ? styles.metaTagWarning : ""
+                  hasBlockingThreadAttention(thread) ? styles.metaTagWarning : ""
                 }`}
               >
-                {describeNativeRequestQueueLabel(locale, pendingInputKind)}
+                {blockingTag}
               </span>
             ) : null}
           </div>
@@ -451,7 +340,6 @@ export function OverviewScreen() {
   return (
     <>
       <ChatsHomeShell
-        subtitle={subtitle}
         title={isZh ? "聊天" : "Chats"}
         actions={
           <div className={styles.headerActions}>
@@ -527,33 +415,6 @@ export function OverviewScreen() {
             </section>
           ) : null}
 
-          {topPriorityEntry && !hasThreadSearch ? (
-            <section className={styles.notice}>
-              <div className={styles.noticeCopy}>
-                <p className={styles.noticeLabel}>
-                  {localize(locale, { zh: "待处理消息", en: "Waiting item" })}
-                </p>
-                <strong>{topPriorityEntry.title}</strong>
-                <p>{describeQueuePreview(locale, topPriorityEntry)}</p>
-              </div>
-              <Link
-                className={styles.noticeAction}
-                href={buildActionHref(topPriorityEntry)}
-                onClick={() => {
-                  setStoredThreadListRoute("/projects");
-                  setStoredLastActiveThread(topPriorityEntry.thread_id);
-                }}
-              >
-                {topPriorityEntry.kind === "input"
-                  ? describeNativeRequestActionLabel(
-                      locale,
-                      topPriorityEntry.native_request_kind ?? "user_input"
-                    )
-                  : localize(locale, { zh: "去处理", en: "Handle" })}
-              </Link>
-            </section>
-          ) : null}
-
           <section className={styles.toolbar}>
             <label className={styles.searchField}>
               <SearchIcon />
@@ -566,72 +427,16 @@ export function OverviewScreen() {
                 value={threadQuery}
               />
             </label>
-            <div className={styles.toolbarMeta}>
-              {hasThreadSearch ? (
-                <button
-                  className={styles.clearButton}
-                  onClick={() => setThreadQuery("")}
-                  type="button"
-                >
-                  {isZh ? "清空" : "Clear"}
-                </button>
-              ) : null}
+            {hasThreadSearch ? (
               <button
-                className={`${styles.filterButton} ${
-                  showArchived ? styles.filterButtonActive : ""
-                }`}
-                onClick={() => setShowArchived((current) => !current)}
+                className={styles.clearButton}
+                onClick={() => setThreadQuery("")}
                 type="button"
               >
-                {showArchived
-                  ? localize(locale, { zh: "隐藏归档", en: "Hide archived" })
-                  : localize(locale, { zh: "显示归档", en: "Show archived" })}
+                {isZh ? "清空" : "Clear"}
               </button>
-            </div>
+            ) : null}
           </section>
-
-          <div className={styles.summaryRow}>
-            <span
-              className={`${styles.summaryPill} ${
-                actionRequiredCount > 0 ? styles.summaryPillAccent : ""
-              }`}
-            >
-              {actionRequiredCount > 0
-                ? localize(locale, {
-                    zh: `${actionRequiredCount} 条待处理`,
-                    en: `${actionRequiredCount} waiting`
-                  })
-                : localize(locale, {
-                    zh: "当前没有待处理消息",
-                    en: "No waiting items"
-                  })}
-            </span>
-            <span className={styles.summaryPill}>
-              {localize(locale, {
-                zh: `${runningCount} 条进行中`,
-                en: `${runningCount} active`
-              })}
-            </span>
-            {hasThreadSearch ? (
-              <span className={styles.summaryPill}>
-                {localize(locale, {
-                  zh:
-                    matchingThreadCount > 0
-                      ? `找到 ${matchingThreadCount} 条聊天`
-                      : "没有找到匹配聊天",
-                  en:
-                    matchingThreadCount > 0
-                      ? `${matchingThreadCount} matching chats`
-                      : "No matching chats"
-                })}
-              </span>
-            ) : null}
-            {isRefreshing ? (
-              <span className={styles.summaryPill}>
-                {localize(locale, { zh: "同步中", en: "Syncing" })}
-              </span>
-            ) : null}
-          </div>
 
           {createError ? (
             <section
@@ -662,9 +467,9 @@ export function OverviewScreen() {
                   : localize(locale, { zh: "最近聊天", en: "Recent chats" })}
               </p>
               <h2>
-                {showArchived
-                  ? localize(locale, { zh: "聊天列表", en: "Chat list" })
-                  : localize(locale, { zh: "按最近活跃排序", en: "Sorted by recent activity" })}
+                {hasThreadSearch
+                  ? localize(locale, { zh: "匹配会话", en: "Matching chats" })
+                  : localize(locale, { zh: "会话列表", en: "Conversations" })}
               </h2>
             </div>
             <span className={styles.listCount}>
@@ -691,15 +496,10 @@ export function OverviewScreen() {
                       zh: "没有找到匹配聊天。",
                       en: "No matching chats."
                     })
-                  : showArchived
-                    ? localize(locale, {
-                        zh: "当前没有归档聊天。",
-                        en: "There are no archived chats right now."
-                      })
-                    : localize(locale, {
-                        zh: "还没有共享聊天。",
-                        en: "There are no shared chats yet."
-                      })}
+                  : localize(locale, {
+                      zh: "还没有可显示的聊天。",
+                      en: "There are no visible chats yet."
+                    })}
               </p>
               <h2>
                 {hasThreadSearch
@@ -719,8 +519,8 @@ export function OverviewScreen() {
                       en: "Search by title, project name, or repo path."
                     })
                   : localize(locale, {
-                      zh: "新聊天会直接连到共享 Codex 会话。",
-                      en: "A new chat opens the shared Codex conversation directly."
+                      zh: "新聊天会直接进入共享会话。",
+                      en: "New chats open the shared conversation directly."
                     })}
               </p>
               <div className={styles.emptyActions}>

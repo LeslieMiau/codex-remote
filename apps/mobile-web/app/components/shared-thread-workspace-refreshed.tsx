@@ -27,7 +27,10 @@ import { useKeyboardViewportState } from "./mobile-viewport";
 import { MobileSheet } from "./mobile-sheet";
 import styles from "./shared-thread-workspace-refreshed.module.css";
 import { getCachedTranscript } from "../lib/client-cache";
-import { getDisplayThreadTitle } from "../lib/chat-thread-presentation";
+import {
+  getDisplayThreadTitle,
+  shouldHideThreadFromMobileList
+} from "../lib/chat-thread-presentation";
 import {
   buildThreadPatchPath,
   buildThreadPath
@@ -56,9 +59,7 @@ import {
 import {
   formatDateTime,
   localize,
-  transportLabel,
   translateApprovalKind,
-  translateThreadState,
   useLocale
 } from "../lib/locale";
 import {
@@ -82,7 +83,6 @@ import {
 import { setStoredLastActiveThread } from "../lib/thread-storage";
 import {
   describeActionError,
-  type LiveActivity,
   useThreadRealtimeState
 } from "../lib/thread-realtime-state";
 
@@ -332,20 +332,6 @@ function capabilityMessage(
   return capabilities?.reason ?? localize(locale, fallback);
 }
 
-function translateSyncState(
-  locale: "zh" | "en",
-  state: CodexThread["sync_state"] | undefined
-) {
-  switch (state) {
-    case "sync_pending":
-      return localize(locale, { zh: "同步中", en: "Sync pending" });
-    case "sync_failed":
-      return localize(locale, { zh: "同步失败", en: "Sync failed" });
-    default:
-      return localize(locale, { zh: "已同步", en: "Synced" });
-  }
-}
-
 function summarizeMessageBody(locale: "zh" | "en", message: CodexMessage | null) {
   if (!message) {
     return localize(locale, {
@@ -363,135 +349,6 @@ function summarizeMessageBody(locale: "zh" | "en", message: CodexMessage | null)
   }
 
   return body.length > 120 ? `${body.slice(0, 117)}...` : body;
-}
-
-function deriveLiveActivity(
-  locale: "zh" | "en",
-  transcript: ReturnType<typeof getCachedTranscript>,
-  transportState: "idle" | "sse" | "websocket",
-  eventActivity: LiveActivity | null
-) {
-  if (!transcript) {
-    return {
-      title: localize(locale, { zh: "正在连接", en: "Connecting" }),
-      detail: localize(locale, {
-        zh: "正在同步这条聊天的最新状态。",
-        en: "Syncing the latest state of this chat."
-      }),
-      tone: "neutral" as const
-    };
-  }
-
-  if (transcript.thread.sync_state === "sync_failed") {
-    return {
-      title: localize(locale, { zh: "未同步到 Codex app", en: "Not synced to Codex app" }),
-      detail: localize(locale, {
-        zh: "最近一条消息尚未进入原生 Codex 时间线。",
-        en: "The latest message has not materialized in native Codex state yet."
-      }),
-      tone: "danger" as const
-    };
-  }
-
-  if (transcript.thread.sync_state === "sync_pending") {
-    return {
-      title: localize(locale, { zh: "等待原生同步", en: "Waiting for native sync" }),
-      detail: localize(locale, {
-        zh: "消息已经发出，正在等待进入 Codex app 的原生时间线。",
-        en: "The message was sent and is waiting to enter the native Codex app timeline."
-      }),
-      tone: "warning" as const
-    };
-  }
-
-  const pendingNativeRequests = transcript.native_requests.filter(
-    (nativeRequest) => nativeRequest.status === "requested"
-  );
-  const pendingApprovals = transcript.approvals.filter(
-    (approval) => approval.status === "requested"
-  );
-  const pendingPatches = transcript.patches.filter(
-    (patch) => patch.status !== "applied" && patch.status !== "discarded"
-  );
-
-  if (pendingNativeRequests.length > 0) {
-    return {
-      title: localize(locale, { zh: "等待输入", en: "Waiting for input" }),
-      detail:
-        pendingNativeRequests[0]?.prompt ??
-        localize(locale, {
-          zh: "Codex 需要你补充输入后再继续。",
-          en: "Codex needs extra input before moving on."
-        }),
-      tone: "warning" as const
-    };
-  }
-
-  if (pendingApprovals.length > 0) {
-    return {
-      title: localize(locale, { zh: "等待批准", en: "Waiting for approval" }),
-      detail: localize(locale, {
-        zh: "先处理批准请求，Codex 才会继续执行。",
-        en: "Resolve the approval request to let Codex continue."
-      }),
-      tone: "warning" as const
-    };
-  }
-
-  if (pendingPatches.length > 0) {
-    return {
-      title: localize(locale, { zh: "待审查", en: "Needs review" }),
-      detail: localize(locale, {
-        zh: "新的变更已经生成，建议先看完再继续发消息。",
-        en: "A change is ready. Review it before moving on."
-      }),
-      tone: "warning" as const
-    };
-  }
-
-  if (transcript.thread.state === "running") {
-    return (
-      eventActivity ?? {
-        title: localize(locale, { zh: "运行中", en: "Running" }),
-        detail: localize(locale, {
-          zh: "Codex 正在继续处理这条聊天。",
-          en: "Codex is actively working in this chat."
-        }),
-        tone: transportState === "websocket" ? "neutral" : "warning"
-      }
-    );
-  }
-
-  if (transcript.thread.state === "failed") {
-    return {
-      title: localize(locale, { zh: "执行失败", en: "Failed" }),
-      detail: localize(locale, {
-        zh: "这条聊天需要新的消息或一次人工处理。",
-        en: "This chat needs a follow-up message or manual action."
-      }),
-      tone: "danger" as const
-    };
-  }
-
-  if (transcript.thread.state === "interrupted") {
-    return {
-      title: localize(locale, { zh: "已中断", en: "Interrupted" }),
-      detail: localize(locale, {
-        zh: "上一次运行已停止，可以继续下一轮任务。",
-        en: "The last run stopped. You can continue with the next task."
-      }),
-      tone: "warning" as const
-    };
-  }
-
-  return {
-    title: localize(locale, { zh: "可继续提问", en: "Ready for follow-up" }),
-    detail: localize(locale, {
-      zh: "默认只显示最近对话内容，更早历史会在向上滚动时按需加载。",
-      en: "Only recent conversation items are shown first. Earlier history loads as you scroll up."
-    }),
-    tone: "success" as const
-  };
 }
 
 function revokePreviewUrl(value?: string) {
@@ -615,13 +472,9 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
     scrollViewportRef,
     error,
     setError,
-    streamNotice,
     setStreamNotice,
     isLoading,
-    isRefreshing,
     isLoadingOlder,
-    transportState,
-    eventActivity,
     showJumpToLatest,
     handleTimelineScroll,
     refreshLatest,
@@ -806,8 +659,6 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                       })
                     : null;
   const composerInputDisabled = !transcript || transcript.thread.archived || isMutating;
-  const liveActivity = deriveLiveActivity(locale, transcript, transportState, eventActivity);
-  const syncStateLabel = translateSyncState(locale, transcript?.thread.sync_state);
   const remoteThreadActionsBlocked = Boolean(
     transcript &&
       (!transcript.thread.adapter_thread_ref || transcript.thread.sync_state === "sync_pending")
@@ -823,10 +674,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
   const hasSkillCapability = Boolean(capabilities?.skills_input);
   const displayThreadTitle = getDisplayThreadTitle(locale, transcript?.thread);
   const headerSubtitle = transcript
-    ? `${translateThreadState(locale, transcript.thread.state)} · ${formatTimestamp(
-        locale,
-        transcript.thread.updated_at
-      )}`
+    ? `${transcript.thread.project_label} · ${formatTimestamp(locale, transcript.thread.updated_at)}`
     : localize(locale, {
         zh: "正在连接聊天",
         en: "Connecting"
@@ -837,22 +685,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
         title: localize(locale, { zh: "当前状态异常", en: "Something needs attention" }),
         tone: "danger" as const
       }
-    : streamNotice
-      ? {
-        detail: streamNotice,
-        title: localize(locale, { zh: "正在使用降级同步", en: "Using fallback sync" }),
-        tone: "warning" as const
-      }
-      : transportState === "idle" && transcript && !isLoading
-        ? {
-            detail: localize(locale, {
-              zh: "实时流暂时不可用，界面会继续自动同步。",
-              en: "Live streaming is temporarily unavailable. The view will keep syncing."
-            }),
-            title: localize(locale, { zh: "正在重连", en: "Reconnecting" }),
-            tone: "warning" as const
-          }
-        : null;
+    : null;
 
   useEffect(() => {
     if (!transcript) {
@@ -1032,9 +865,9 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
         includeArchived: true
       });
       setSwitcherThreads(
-        [...overview.threads].sort((left, right) =>
-          right.updated_at.localeCompare(left.updated_at)
-        )
+        [...overview.threads]
+          .filter((thread) => !shouldHideThreadFromMobileList(thread))
+          .sort((left, right) => right.updated_at.localeCompare(left.updated_at))
       );
     } catch (loadError) {
       setThreadSwitcherError(describeActionError(locale, loadError));
@@ -1464,8 +1297,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
           <section
             className={[
               styles.noticeBar,
-              topStatus.tone === "danger" ? styles.noticeBarDanger : "",
-              topStatus.tone === "warning" ? styles.noticeBarWarning : ""
+              styles.noticeBarDanger
             ]
               .filter(Boolean)
               .join(" ")}
@@ -1604,11 +1436,10 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                   type="button"
                 >
                   <div className={styles.sheetListButtonCopy}>
-                    <strong>{thread.title}</strong>
+                    <strong>{getDisplayThreadTitle(locale, thread)}</strong>
                     <span>{thread.project_label}</span>
                   </div>
                   <div className={styles.sheetListButtonMeta}>
-                    <span className="state-pill">{translateThreadState(locale, thread.state)}</span>
                     {thread.pending_approvals > 0 ? (
                       <span className="status-dot">
                         {isZh
@@ -1709,32 +1540,6 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
           variant="chat"
         >
           <div className={styles.sheetStack}>
-            <section className={styles.sheetSection}>
-              <div className={styles.sheetSectionHeader}>
-                <strong>{localize(locale, { zh: "聊天状态", en: "Chat status" })}</strong>
-              </div>
-              <div className={styles.sheetInfoList}>
-                <div className={styles.sheetInfoRow}>
-                  <span>{localize(locale, { zh: "状态", en: "Status" })}</span>
-                  <strong>
-                    {transcript ? translateThreadState(locale, transcript.thread.state) : "-"}
-                  </strong>
-                </div>
-                <div className={styles.sheetInfoRow}>
-                  <span>{localize(locale, { zh: "同步", en: "Sync" })}</span>
-                  <strong>{syncStateLabel}</strong>
-                </div>
-                <div className={styles.sheetInfoRow}>
-                  <span>{localize(locale, { zh: "连接", en: "Transport" })}</span>
-                  <strong>{transportLabel(locale, transportState)}</strong>
-                </div>
-                <div className={styles.sheetInfoRow}>
-                  <span>{localize(locale, { zh: "聊天 ID", en: "Chat ID" })}</span>
-                  <strong>{threadId}</strong>
-                </div>
-              </div>
-            </section>
-
             <section className={styles.sheetSection}>
               <div className={styles.sheetSectionHeader}>
                 <strong>{localize(locale, { zh: "聊天设置", en: "Chat settings" })}</strong>

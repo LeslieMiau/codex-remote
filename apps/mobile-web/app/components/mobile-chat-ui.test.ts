@@ -240,6 +240,19 @@ describe("mobile chat list rendering", () => {
       ],
       threads: [
         buildThread({
+          thread_id: "thread-recovery",
+          title: "Recovered thread",
+          project_label: "Recovered project",
+          source: "gateway_fallback",
+          updated_at: "2026-03-22T10:06:00.000Z"
+        }),
+        buildThread({
+          thread_id: "thread-archived",
+          title: "Archived thread",
+          archived: true,
+          updated_at: "2026-03-22T10:05:30.000Z"
+        }),
+        buildThread({
           thread_id: "thread-ready",
           title: "Newest ready thread",
           updated_at: "2026-03-22T10:05:00.000Z"
@@ -289,6 +302,11 @@ describe("mobile chat list rendering", () => {
     expect(markup).not.toContain("codex-home-hero");
     expect(markup).not.toContain("codex-page-card--plain");
     expect(markup).not.toContain("Like WeChat or Telegram");
+    expect(markup).not.toContain("Show archived");
+    expect(markup).not.toContain("No waiting items");
+    expect(markup).not.toContain("Recovered thread");
+    expect(markup).not.toContain("Archived thread");
+    expect(markup).not.toContain("Codex is still typing in this chat.");
     expect(extractRowTitles(markup)).toEqual([
       "Input thread",
       "Approval thread",
@@ -370,8 +388,10 @@ describe("mobile chat list rendering", () => {
     expect(markup).not.toContain("codex-tab-bar");
     expect(markup).not.toContain("codex-home-hero");
     expect(markup).not.toContain("codex-page-card--plain");
+    expect(markup).not.toContain("0 reviews");
+    expect(markup).not.toContain("0 failed");
     expect(extractRowTitles(markup)).toEqual([
-      "Input item",
+      "Input thread",
       "Approval item",
       "Patch item",
       "Failed item"
@@ -389,5 +409,7 @@ describe("mobile chat list rendering", () => {
     expect(markup).not.toContain("codex-app--primary");
     expect(markup).not.toContain("共享配置");
     expect(markup).not.toContain("这里可以查看并调整共享 Codex 的模型与推理配置。");
+    expect(markup).not.toContain("Source:");
+    expect(markup).not.toContain("Updated:");
   });
 });

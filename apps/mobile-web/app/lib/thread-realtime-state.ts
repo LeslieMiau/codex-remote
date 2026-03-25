@@ -642,7 +642,9 @@ export function useThreadRealtimeState({
   const liveBannerItem = useMemo(
     () =>
       liveState &&
-      (liveState.details.length > 0 || liveState.awaiting_native_commit || !liveDraftMessage)
+      !liveDraftMessage &&
+      (liveState.status === "failed" || liveState.status === "interrupted") &&
+      (liveState.detail?.trim() || liveState.details.length > 0)
         ? {
             live_state: liveState,
             tone: liveStateTone(liveState),

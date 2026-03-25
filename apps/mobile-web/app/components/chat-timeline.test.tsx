@@ -219,7 +219,7 @@ describe("chat timeline component", () => {
       })
     );
 
-    expect(markup).toContain("Codex is still typing...");
+    expect(markup).not.toContain("Codex is still typing...");
     expect(markup).not.toContain("Codex is processing this request");
   });
 });

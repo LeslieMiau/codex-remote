@@ -190,12 +190,12 @@ export function SettingsScreen() {
     : localize(locale, { zh: "可编辑", en: "Editable" });
   const editorNote = settings?.read_only
     ? localize(locale, {
-        zh: "当前环境只能读取共享配置，手机端暂时不能直接保存。",
-        en: "This host is read only, so edits cannot be saved from mobile right now."
+        zh: "当前设备只读。",
+        en: "This device is read only."
       })
     : localize(locale, {
-        zh: "保存后，新的模型与推理设置会用于后续共享线程。",
-        en: "Saved model and reasoning settings will apply to new shared thread runs."
+        zh: "保存后用于后续共享会话。",
+        en: "Saved changes apply to later shared chats."
       });
 
   return (
@@ -218,7 +218,6 @@ export function SettingsScreen() {
       }
       eyebrow={isZh ? "设置" : "Settings"}
       shellId="settings-home"
-      subtitle={isZh ? "共享模型与推理" : "Shared model and reasoning"}
       title={isZh ? "设置" : "Settings"}
     >
       <div className={styles.page} data-settings-screen="compact-settings">
@@ -263,26 +262,13 @@ export function SettingsScreen() {
             </div>
             <span className={`${styles.pill} ${styles.pillAccent}`}>{editableLabel}</span>
           </div>
-          <div className={styles.pillRow}>
-            <span className={styles.pill}>
-              {localize(locale, { zh: "来源", en: "Source" })}: {sourceLabel}
-            </span>
-            <span className={styles.pill}>
-              {localize(locale, { zh: "更新于", en: "Updated" })}: {updatedLabel}
-            </span>
-            {diagnostics?.requires_openai_auth ? (
-              <span className={styles.pill}>
-                {localize(locale, { zh: "需要认证", en: "Auth required" })}
-              </span>
-            ) : null}
-          </div>
         </section>
 
         <section className={styles.editor}>
           <div className={styles.sectionHead}>
             <div>
               <p className={styles.sectionEyebrow}>{isZh ? "编辑" : "Edit"}</p>
-              <h2>{isZh ? "共享模型配置" : "Shared model configuration"}</h2>
+              <h2>{isZh ? "模型与推理" : "Model and reasoning"}</h2>
               <p className={styles.sectionNote}>{editorNote}</p>
             </div>
           </div>

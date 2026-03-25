@@ -17,17 +17,16 @@ import {
   formatDateTime,
   localize,
   translateQueueKind,
-  translateStatusText,
   useLocale
 } from "../lib/locale";
 import {
   describeNativeRequestAttentionLabel,
-  describeNativeRequestQueueLabel,
   describeQueueInputPreview,
   isDesktopOrientedNativeRequest
 } from "../lib/native-input-copy";
 import { compareQueueEntriesForMobile } from "../lib/mobile-priority";
 import { setStoredLastActiveThread } from "../lib/thread-storage";
+import { getDisplayThreadTitle } from "../lib/chat-thread-presentation";
 import { DetailShell } from "./detail-shell";
 import styles from "./queue-screen.module.css";
 
@@ -60,23 +59,23 @@ function describeQueuePreview(locale: "zh" | "en", entry: CodexQueueEntry) {
       );
     case "approval":
       return localize(locale, {
-        zh: `新的批准请求到了。${detail}`,
-        en: `A fresh approval request came in. ${detail}`
+        zh: "需要先处理这条批准请求。",
+        en: "Handle this approval request first."
       });
     case "patch":
       return localize(locale, {
-        zh: `新的补丁已经准备好。${detail}`,
-        en: `A new patch is ready for review. ${detail}`
+        zh: "有一份变更等你审查。",
+        en: "A change is ready for review."
       });
     case "failed":
       return localize(locale, {
-        zh: `这条聊天需要你回来收尾。${detail}`,
-        en: `This chat needs you to jump back in. ${detail}`
+        zh: "这条聊天需要回来处理。",
+        en: "This chat needs follow-up."
       });
     default:
       return localize(locale, {
-        zh: `Codex 还在继续处理。${detail}`,
-        en: `Codex is still working on it. ${detail}`
+        zh: "有新的事项需要查看。",
+        en: "There is an item waiting here."
       });
   }
 }
@@ -228,6 +227,59 @@ export function QueueScreen() {
   const approvalCount = actionableQueue.filter((entry) => entry.kind === "approval").length;
   const patchCount = actionableQueue.filter((entry) => entry.kind === "patch").length;
   const failedCount = actionableQueue.filter((entry) => entry.kind === "failed").length;
+  const availableFilters = useMemo<InputFocusFilter[]>(
+    () => [
+      "all",
+      ...(desktopRecoveryInputEntries.length > 0 ? (["desktop"] as const) : []),
+      ...(replyableInputEntries.length > 0 ? (["replyable"] as const) : [])
+    ],
+    [desktopRecoveryInputEntries.length, replyableInputEntries.length]
+  );
+  const showFilterBar = availableFilters.length > 1;
+  const summaryItems = [
+    {
+      key: "waiting",
+      label: isZh
+        ? `${filteredActionableQueue.length} 条待处理`
+        : `${filteredActionableQueue.length} waiting`,
+      tone: styles.summaryChipAccent,
+      visible: filteredActionableQueue.length > 0
+    },
+    {
+      key: "replyable",
+      label: isZh
+        ? `${replyableInputEntries.length} 条手机可回`
+        : `${replyableInputEntries.length} reply here`,
+      tone: "",
+      visible: replyableInputEntries.length > 0
+    },
+    {
+      key: "desktop",
+      label: isZh
+        ? `${desktopRecoveryInputEntries.length} 条回桌面`
+        : `${desktopRecoveryInputEntries.length} desktop`,
+      tone: styles.summaryChipWarning,
+      visible: desktopRecoveryInputEntries.length > 0
+    },
+    {
+      key: "approval",
+      label: isZh ? `${approvalCount} 个批准` : `${approvalCount} approvals`,
+      tone: "",
+      visible: approvalCount > 0
+    },
+    {
+      key: "patch",
+      label: isZh ? `${patchCount} 个审查` : `${patchCount} reviews`,
+      tone: "",
+      visible: patchCount > 0
+    },
+    {
+      key: "failed",
+      label: isZh ? `${failedCount} 个失败` : `${failedCount} failed`,
+      tone: "",
+      visible: failedCount > 0
+    }
+  ].filter((item) => item.visible);
   const subtitle =
     filteredActionableQueue.length > 0
       ? localize(locale, {
@@ -238,6 +290,13 @@ export function QueueScreen() {
           zh: "现在没有需要你点开的事项。",
           en: "Nothing needs your attention right now."
         });
+
+  useEffect(() => {
+    if (availableFilters.includes(inputFocusFilter)) {
+      return;
+    }
+    setInputFocusFilter("all");
+  }, [availableFilters, inputFocusFilter]);
 
   function renderRefreshIcon() {
     return (
@@ -257,6 +316,14 @@ export function QueueScreen() {
   function renderQueueRow(entry: CodexQueueEntry) {
     const isDesktopRecovery = isDesktopRecoveryInputEntry(entry);
     const thread = overview?.threads.find((candidate) => candidate.thread_id === entry.thread_id);
+    const title = thread ? getDisplayThreadTitle(locale, thread) : entry.title;
+    const actionChip =
+      entry.kind === "input"
+        ? describeNativeRequestAttentionLabel(
+            locale,
+            entry.native_request_kind ?? "user_input"
+          )
+        : translateQueueKind(locale, entry.kind);
 
     return (
       <Link
@@ -277,12 +344,12 @@ export function QueueScreen() {
             .filter(Boolean)
             .join(" ")}
         >
-          {getAvatarLabel(entry.title)}
+          {getAvatarLabel(title)}
         </div>
         <div className={styles.rowContent}>
           <div className={styles.rowHead}>
             <div className={styles.rowTitleWrap}>
-              <strong className={styles.rowTitle}>{entry.title}</strong>
+              <strong className={styles.rowTitle}>{title}</strong>
               <p className={styles.rowPreview}>{describeQueuePreview(locale, entry)}</p>
             </div>
             <div className={styles.rowAside}>
@@ -294,34 +361,17 @@ export function QueueScreen() {
             <span
               className={[
                 styles.rowChip,
-                entry.kind === "input" ? styles.rowChipAccent : ""
+                entry.kind === "input"
+                  ? isDesktopRecovery
+                    ? styles.rowChipWarning
+                    : styles.rowChipAccent
+                  : ""
               ]
                 .filter(Boolean)
                 .join(" ")}
             >
-              {entry.kind === "input"
-                ? describeNativeRequestQueueLabel(
-                    locale,
-                    entry.native_request_kind ?? "user_input"
-                  )
-                : translateQueueKind(locale, entry.kind)}
+              {actionChip}
             </span>
-            {entry.kind === "input" ? (
-              <span
-                className={[
-                  styles.rowChip,
-                  isDesktopRecovery ? styles.rowChipWarning : ""
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-              >
-                {describeNativeRequestAttentionLabel(
-                  locale,
-                  entry.native_request_kind ?? "user_input"
-                )}
-              </span>
-            ) : null}
-            <span className={styles.rowChip}>{translateStatusText(locale, entry.status)}</span>
             {thread ? <span className={styles.rowChip}>{getRepoTail(thread.repo_root)}</span> : null}
           </div>
         </div>
@@ -377,41 +427,22 @@ export function QueueScreen() {
           </section>
         ) : null}
 
-        <div className={styles.summaryRow}>
-          <span className={`${styles.summaryChip} ${styles.summaryChipAccent}`}>
-            {isZh
-              ? `${filteredActionableQueue.length} 条待处理`
-              : `${filteredActionableQueue.length} waiting`}
-          </span>
-          <span className={styles.summaryChip}>
-            {isZh
-              ? `${replyableInputEntries.length} 条手机可回`
-              : `${replyableInputEntries.length} reply here`}
-          </span>
-          <span className={`${styles.summaryChip} ${styles.summaryChipWarning}`}>
-            {isZh
-              ? `${desktopRecoveryInputEntries.length} 条回桌面`
-              : `${desktopRecoveryInputEntries.length} desktop`}
-          </span>
-          {approvalCount > 0 ? (
-            <span className={styles.summaryChip}>
-              {isZh ? `${approvalCount} 个批准` : `${approvalCount} approvals`}
-            </span>
-          ) : null}
-          {patchCount > 0 ? (
-            <span className={styles.summaryChip}>
-              {isZh ? `${patchCount} 个审查` : `${patchCount} reviews`}
-            </span>
-          ) : null}
-          {failedCount > 0 ? (
-            <span className={styles.summaryChip}>
-              {isZh ? `${failedCount} 个失败` : `${failedCount} failed`}
-            </span>
-          ) : null}
-        </div>
+        {summaryItems.length > 0 ? (
+          <div className={styles.summaryRow}>
+            {summaryItems.map((item) => (
+              <span
+                className={[styles.summaryChip, item.tone].filter(Boolean).join(" ")}
+                key={item.key}
+              >
+                {item.label}
+              </span>
+            ))}
+          </div>
+        ) : null}
 
-        <div className={styles.filterBar}>
-          {(["all", "desktop", "replyable"] as const).map((filter) => (
+        {showFilterBar ? (
+          <div className={styles.filterBar}>
+            {availableFilters.map((filter) => (
             <button
               key={filter}
               className={[
@@ -425,8 +456,9 @@ export function QueueScreen() {
             >
               {describeInputFocusFilter(locale, filter)}
             </button>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : null}
 
         {isLoading && !overview ? (
           <div aria-hidden="true" className={styles.loadingList}>
@@ -439,13 +471,13 @@ export function QueueScreen() {
         ) : (
           <section className={styles.empty}>
             <p>
-              {inputFocusFilter === "all"
+              {inputFocusFilter === "all" || !showFilterBar
                 ? localize(locale, {
                     zh: "现在没有需要你点开的事项。",
                     en: "Nothing needs your attention right now."
                   })
                 : localize(locale, {
-                    zh: "当前筛选下没有待处理事项。",
+                    zh: "当前筛选下没有事项。",
                     en: "No inbox items match this filter."
                   })}
             </p>

@@ -145,9 +145,13 @@ function GroupItem({
 }) {
   const isUser = group.role === "user";
   const isSystem = group.role === "system_action";
+  const visibleMessages = group.messages.filter((message) => {
+    const body = renderMessageBody(message);
+    return !(message.is_live_draft && !body.trim() && message.details.length === 0);
+  });
 
   if (isSystem) {
-    const leadMessage = group.messages[group.messages.length - 1];
+    const leadMessage = visibleMessages[visibleMessages.length - 1] ?? group.messages[group.messages.length - 1];
     const leadBody = renderMessageBody(leadMessage);
 
     return (
@@ -191,6 +195,10 @@ function GroupItem({
     );
   }
 
+  if (visibleMessages.length === 0) {
+    return null;
+  }
+
   return (
     <article
       className={[
@@ -203,7 +211,7 @@ function GroupItem({
     >
       <div className={styles.groupStack}>
         <div className={styles.groupBody}>
-          {group.messages.map((message) => {
+          {visibleMessages.map((message) => {
             const body = renderMessageBody(message);
             const hasBody = Boolean(body.trim());
 
@@ -220,20 +228,6 @@ function GroupItem({
                   .join(" ")}
               >
                 {hasBody ? <p className={styles.messageText}>{body}</p> : null}
-
-                {message.is_live_draft ? (
-                  <p className={styles.messageNote}>
-                    {message.awaiting_native_commit
-                      ? localize(locale, {
-                          zh: "等待同步到正式聊天记录",
-                          en: "Waiting for the official chat history to catch up"
-                        })
-                      : localize(locale, {
-                          zh: "Codex 正在继续输入…",
-                          en: "Codex is still typing..."
-                        })}
-                  </p>
-                ) : null}
 
                 <MessageDetails locale={locale} message={message} />
               </div>

@@ -11,12 +11,16 @@ export function buildInlineLiveDraft(input: {
   if (!input.liveState) {
     return null;
   }
+  const assistantText = input.liveState.assistant_text.trim();
+  if (!assistantText) {
+    return null;
+  }
   return {
     message_id: `live-draft:${input.threadId}`,
     thread_id: input.threadId,
     timestamp: input.liveState.updated_at,
     role: "assistant",
-    body: input.liveState.detail ?? "",
+    body: assistantText,
     title: input.locale === "zh" ? "实时草稿" : "Live draft",
     details: input.liveState.details,
     status: input.liveState.status,

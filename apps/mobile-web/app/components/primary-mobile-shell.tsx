@@ -127,9 +127,7 @@ export function PrimaryMobileShell({
       <div className={styles.layout}>
         <header className={styles.header}>
           <div className={styles.headerCopy}>
-            {eyebrow ? <p className={styles.eyebrow}>{eyebrow}</p> : null}
             <h1>{title}</h1>
-            {subtitle ? <p>{subtitle}</p> : null}
           </div>
           {actions ? <div className={styles.headerActions}>{actions}</div> : null}
         </header>

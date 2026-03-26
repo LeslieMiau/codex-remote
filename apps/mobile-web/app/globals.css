@@ -1,37 +1,37 @@
 :root {
   color-scheme: light dark;
-  /* Soft Ambient Palette - Obsidian Surface */
-  --bg-app: #f5f6f8;
-  --bg-app-dark: #121214; 
+  /* Telegram/WeChat palette */
+  --bg-app: #ebebeb;
+  --bg-app-dark: #000000; 
   
-  /* Semantic Tokens - Light Mode (Refined) */
+  /* Semantic Tokens - Light Mode */
   --bg: var(--bg-app);
-  --bg-elevated: rgba(0, 0, 0, 0.02); /* Translucent, not white block */
-  --bg-muted: rgba(0, 0, 0, 0.01);
-  --bg-soft: rgba(0, 0, 0, 0.01);
-  --border: rgba(0, 0, 0, 0.04);
-  --border-strong: rgba(0, 0, 0, 0.08);
-  --text: #1a1a1c;
-  --text-muted: #71717a;
-  --text-soft: #a1a1aa;
-  --accent: #6366f1;
-  --accent-strong: #4f46e5;
-  --danger: #f43f5e;
-  --warning: #f59e0b;
-  --success: #10b981;
-  --shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
-  --shadow-lg: 0 12px 30px rgba(0, 0, 0, 0.06);
-  --glass-bg: rgba(255, 255, 255, 0.7);
-  --glass-border: rgba(0, 0, 0, 0.03);
-  --blur: 24px;
+  --bg-elevated: #f7f7f7;
+  --bg-muted: #e4e4e5;
+  --bg-soft: rgba(0, 0, 0, 0.03);
+  --border: rgba(0, 0, 0, 0.06);
+  --border-strong: rgba(0, 0, 0, 0.12);
+  --text: #000000;
+  --text-muted: #8e8e93;
+  --text-soft: #c7c7cc;
+  --accent: #007aff;
+  --accent-strong: #0056b3;
+  --danger: #ff3b30;
+  --warning: #ff9500;
+  --success: #34c759;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --glass-bg: var(--bg-elevated); /* Replaced glass with solid */
+  --glass-border: var(--border);
+  --blur: 0px;
   
   /* Bubbles */
-  --bg-bubble-user: rgba(99, 102, 241, 0.1);
+  --bg-bubble-user: #95ec69; /* WeChat Green */
   --bg-bubble-assistant: #ffffff;
   
-  --radius-lg: 28px;
-  --radius-md: 18px;
-  --radius-sm: 12px;
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
@@ -39,22 +39,22 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: var(--bg-app-dark);
-    --bg-elevated: rgba(255, 255, 255, 0.04);
-    --bg-muted: rgba(255, 255, 255, 0.02);
-    --bg-soft: rgba(255, 255, 255, 0.02);
-    --border: rgba(255, 255, 255, 0.06);
-    --border-strong: rgba(255, 255, 255, 0.1);
-    --text: rgba(255, 255, 255, 0.92);
-    --text-muted: rgba(255, 255, 255, 0.6);
-    --text-soft: rgba(255, 255, 255, 0.4);
-    --accent: #818cf8;
-    --accent-strong: #6366f1;
-    --glass-bg: rgba(18, 18, 20, 0.75);
-    --glass-border: rgba(255, 255, 255, 0.04);
+    --bg-elevated: #1c1c1e; /* Apple Dark Mode standard */
+    --bg-muted: #2c2c2e;
+    --bg-soft: rgba(255, 255, 255, 0.05);
+    --border: #38383a;
+    --border-strong: #48484a;
+    --text: #ffffff;
+    --text-muted: #8e8e93;
+    --text-soft: #636366;
+    --accent: #0a84ff;
+    --accent-strong: #007aff;
+    --glass-bg: var(--bg-elevated);
+    --glass-border: var(--border);
     
     /* Bubbles Dark */
-    --bg-bubble-user: rgba(99, 102, 241, 0.18);
-    --bg-bubble-assistant: rgba(255, 255, 255, 0.05);
+    --bg-bubble-user: #0a84ff; /* iMessage Blue for contrast */
+    --bg-bubble-assistant: #2c2c2e;
   }
 }
 
@@ -86,15 +86,13 @@ body {
   padding: 0; /* Let layout handle padding */
 }
 
-/* Page Headers & Sections - Integrated Surfaces */
+/* Page Headers & Sections - Solid Surfaces */
 .codex-page-header,
 .codex-section,
 .codex-settings-card {
-  padding: 16px;
-  background: var(--bg-elevated); /* Translucent by default now */
+  padding: 12px 16px;
+  background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
-  backdrop-filter: blur(var(--blur));
-  -webkit-backdrop-filter: blur(var(--blur));
 }
 
 
@@ -301,29 +299,28 @@ body {
   border-color: rgba(109, 211, 167, 0.35);
 }
 
-/* Message Bubbles - Soft Ambient Integration */
+/* Message Bubbles - Solid Minimal Layout */
 .codex-chat-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 20px 16px;
+  gap: 8px;
+  padding: 12px 10px;
   background: var(--bg);
 }
 
 .codex-chat-message {
   position: relative;
-  max-width: 88%;
-  padding: 14px 18px;
-  border-radius: 24px;
-  font-size: 15px;
-  line-height: 1.6;
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  font-size: 16px;
+  line-height: 1.5;
   word-wrap: break-word;
   margin-bottom: 2px;
-  border: 1px solid var(--border);
   background: var(--bg-bubble-assistant);
   color: var(--text);
-  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
+  transition: transform 0.1s ease-out;
 }
 
 .codex-chat-message:active {
@@ -333,7 +330,7 @@ body {
 .codex-chat-message.role-user {
   align-self: flex-end;
   background: var(--bg-bubble-user);
-  color: var(--text);
+  color: #000; /* WeChat/Apple user bubbles are readable text */
   border-bottom-right-radius: 4px;
   margin-left: auto;
   border-color: transparent;
@@ -348,18 +345,14 @@ body {
 
 @media (prefers-color-scheme: dark) {
   .codex-chat-message {
-    border-color: var(--border);
-    box-shadow: none; /* Rely on luminosity for depth in dark mode */
+    border-color: transparent;
   }
   .codex-chat-message.role-user {
-    background: var(--bg-bubble-user-dark);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    background: var(--bg-bubble-user);
+    color: #fff;
   }
   .codex-chat-message.role-assistant {
-    background: var(--bg-bubble-assistant-dark);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    background: var(--bg-bubble-assistant);
   }
 }
 
@@ -471,8 +464,7 @@ body {
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: rgba(7, 16, 26, 0.92);
-  backdrop-filter: blur(18px);
+  background: var(--bg-elevated);
 }
 
 .codex-mobile-nav {
@@ -506,21 +498,21 @@ body {
 .codex-composer,
 .composer-shell {
   position: sticky;
-  bottom: calc(18px + var(--safe-bottom));
+  bottom: 0;
+  padding-bottom: calc(4px + var(--safe-bottom));
   z-index: 18;
   background: var(--bg-elevated);
-  padding: 10px 14px;
+  padding: 8px 12px;
   border-top: 1px solid var(--border);
-  backdrop-filter: blur(20px);
 }
 
 .composer-row {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: flex-end;
   background: var(--bg-muted);
-  border-radius: 24px;
-  padding: 4px 12px;
+  border-radius: 20px;
+  padding: 2px 10px;
   border: 1px solid var(--border);
 }
 
@@ -672,11 +664,10 @@ body {
   position: sticky;
   top: 0;
   z-index: 50;
-  background: var(--glass-bg);
-  padding: 14px 20px;
+  background: var(--bg-elevated);
+  padding: 12px 16px;
+  padding-top: calc(12px + var(--safe-top));
   border-bottom: 1px solid var(--border);
-  backdrop-filter: blur(var(--blur));
-  -webkit-backdrop-filter: blur(var(--blur));
 }
 
 .codex-page-header__top {

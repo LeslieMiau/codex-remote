@@ -38,10 +38,8 @@
   align-items: center;
   gap: 12px;
   padding: calc(8px + var(--safe-top)) 14px 10px;
-  background: rgba(247, 245, 239, 0.94);
+  background: var(--chat-surface);
   border-bottom: 1px solid rgba(15, 23, 42, 0.05);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
 }
 
 .pageHeaderBack {
@@ -231,15 +229,13 @@
 .bubble {
   min-width: 0;
   padding: 10px 12px;
-  border-radius: 18px 18px 18px 6px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06);
+  border-radius: 12px 12px 12px 2px;
+  background: var(--chat-surface-strong);
 }
 
 .bubbleUser {
-  border-radius: 18px 18px 6px 18px;
+  border-radius: 12px 12px 2px 12px;
   background: var(--chat-user);
-  box-shadow: none;
 }
 
 .bubbleSystem {
@@ -248,7 +244,7 @@
 
 .bubbleLive {
   background: rgba(255, 255, 255, 0.82);
-  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
 .messageText {
@@ -279,18 +275,17 @@
 .activityStrip {
   width: min(100%, 88%);
   margin: 2px auto;
-  padding: 9px 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(15, 23, 42, 0.06);
-  background: rgba(255, 255, 255, 0.76);
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: transparent;
+  border: none;
+  text-align: center;
 }
 
 .systemNotice {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  background: color-mix(in srgb, var(--chat-warning-soft) 52%, white 48%);
-  border-color: color-mix(in srgb, var(--chat-warning) 18%, transparent 82%);
+  gap: 4px;
 }
 
 .systemNoticeHeader {
@@ -482,9 +477,7 @@
   gap: 7px;
   padding: 7px 12px calc(8px + var(--safe-bottom));
   border-top: 1px solid rgba(15, 23, 42, 0.05);
-  background: rgba(247, 245, 239, 0.94);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: var(--chat-surface);
 }
 
 .composerGate {
@@ -694,9 +687,9 @@
   display: flex;
   align-items: center;
   padding: 7px 12px;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+  border-radius: 6px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
 }
 
 .textarea {

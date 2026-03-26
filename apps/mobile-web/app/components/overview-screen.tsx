@@ -38,6 +38,7 @@ import { setStoredLastActiveThread } from "../lib/thread-storage";
 import {
   getDisplayThreadTitle,
   hasBlockingThreadAttention,
+  isRecoveryFallbackThread,
   shouldHideThreadFromMobileList
 } from "../lib/chat-thread-presentation";
 import { ChatsHomeShell } from "./chats-home-shell";
@@ -213,6 +214,17 @@ export function OverviewScreen() {
     [filteredThreads]
   );
   const matchingThreadCount = visibleThreads.length;
+  const isFallbackOnlyOverview = useMemo(() => {
+    if (!overview) {
+      return false;
+    }
+
+    return (
+      overview.capabilities.shared_state_available === false &&
+      overview.threads.length > 0 &&
+      overview.threads.every((thread) => isRecoveryFallbackThread(thread))
+    );
+  }, [overview]);
   const actionableQueue = useMemo(
     () =>
       [...(overview?.queue ?? [])]
@@ -496,10 +508,15 @@ export function OverviewScreen() {
                       zh: "没有找到匹配聊天。",
                       en: "No matching chats."
                     })
-                  : localize(locale, {
-                      zh: "还没有可显示的聊天。",
-                      en: "There are no visible chats yet."
-                    })}
+                  : isFallbackOnlyOverview
+                    ? localize(locale, {
+                        zh: "共享网关当前离线，聊天列表暂时不可用。",
+                        en: "The shared gateway is offline, so chats are unavailable right now."
+                      })
+                    : localize(locale, {
+                        zh: "还没有可显示的聊天。",
+                        en: "There are no visible chats yet."
+                      })}
               </p>
               <h2>
                 {hasThreadSearch
@@ -507,6 +524,11 @@ export function OverviewScreen() {
                       zh: "换个关键词再试试。",
                       en: "Try a different keyword."
                     })
+                  : isFallbackOnlyOverview
+                    ? localize(locale, {
+                        zh: "等网关恢复后，这里会自动出现真实会话。",
+                        en: "Real chats will appear here once the gateway reconnects."
+                      })
                   : localize(locale, {
                       zh: "从这里开始第一条对话。",
                       en: "Start the first conversation from here."
@@ -518,6 +540,11 @@ export function OverviewScreen() {
                       zh: "可以继续按标题、项目名或仓库路径搜索。",
                       en: "Search by title, project name, or repo path."
                     })
+                  : isFallbackOnlyOverview
+                    ? localize(locale, {
+                        zh: "当前只保留离线兜底数据，异常恢复线程不会显示在主列表中。",
+                        en: "Only offline fallback data is available, and recovery threads stay hidden from the main list."
+                      })
                   : localize(locale, {
                       zh: "新聊天会直接进入共享会话。",
                       en: "New chats open the shared conversation directly."

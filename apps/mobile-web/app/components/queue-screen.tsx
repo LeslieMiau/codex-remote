@@ -26,7 +26,10 @@ import {
 } from "../lib/native-input-copy";
 import { compareQueueEntriesForMobile } from "../lib/mobile-priority";
 import { setStoredLastActiveThread } from "../lib/thread-storage";
-import { getDisplayThreadTitle } from "../lib/chat-thread-presentation";
+import {
+  getDisplayThreadTitle,
+  isRecoveryFallbackThread
+} from "../lib/chat-thread-presentation";
 import { DetailShell } from "./detail-shell";
 import styles from "./queue-screen.module.css";
 
@@ -236,6 +239,17 @@ export function QueueScreen() {
     [desktopRecoveryInputEntries.length, replyableInputEntries.length]
   );
   const showFilterBar = availableFilters.length > 1;
+  const isFallbackOnlyOverview = useMemo(() => {
+    if (!overview) {
+      return false;
+    }
+
+    return (
+      overview.capabilities.shared_state_available === false &&
+      overview.threads.length > 0 &&
+      overview.threads.every((thread) => isRecoveryFallbackThread(thread))
+    );
+  }, [overview]);
   const summaryItems = [
     {
       key: "waiting",
@@ -471,7 +485,12 @@ export function QueueScreen() {
         ) : (
           <section className={styles.empty}>
             <p>
-              {inputFocusFilter === "all" || !showFilterBar
+              {isFallbackOnlyOverview
+                ? localize(locale, {
+                    zh: "共享网关当前离线，收件箱暂时没有可同步的事项。",
+                    en: "The shared gateway is offline, so the inbox cannot sync right now."
+                  })
+                : inputFocusFilter === "all" || !showFilterBar
                 ? localize(locale, {
                     zh: "现在没有需要你点开的事项。",
                     en: "Nothing needs your attention right now."
@@ -482,7 +501,13 @@ export function QueueScreen() {
                   })}
             </p>
             <Link className={styles.emptyAction} href="/projects">
-              {isZh ? "回到聊天" : "Back to chats"}
+              {isFallbackOnlyOverview
+                ? isZh
+                  ? "回到聊天列表"
+                  : "Back to chats"
+                : isZh
+                  ? "回到聊天"
+                  : "Back to chats"}
             </Link>
           </section>
         )}

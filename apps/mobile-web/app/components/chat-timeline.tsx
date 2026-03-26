@@ -9,6 +9,7 @@ import type { ChatTimelineItem, MessageGroup } from "../lib/chat-timeline";
 import styles from "./shared-thread-workspace-refreshed.module.css";
 
 interface ChatTimelineProps {
+  emptyMessage?: string;
   hasMoreRemoteHistory: boolean;
   hiddenItemCount: number;
   isLoading: boolean;
@@ -242,6 +243,7 @@ function GroupItem({
 }
 
 export function ChatTimeline({
+  emptyMessage,
   hasMoreRemoteHistory,
   hiddenItemCount,
   isLoading,
@@ -435,10 +437,11 @@ export function ChatTimeline({
 
       {!isLoading && timelineItems.length === 0 ? (
         <div className={styles.historyLoader}>
-          {localize(locale, {
-            zh: "这条聊天里还没有消息。",
-            en: "No messages yet in this chat."
-          })}
+          {emptyMessage ??
+            localize(locale, {
+              zh: "这条聊天里还没有消息。",
+              en: "No messages yet in this chat."
+            })}
         </div>
       ) : null}
     </>

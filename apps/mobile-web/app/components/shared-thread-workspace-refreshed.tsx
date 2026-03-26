@@ -29,6 +29,7 @@ import styles from "./shared-thread-workspace-refreshed.module.css";
 import { getCachedTranscript } from "../lib/client-cache";
 import {
   getDisplayThreadTitle,
+  isRecoveryFallbackThread,
   shouldHideThreadFromMobileList
 } from "../lib/chat-thread-presentation";
 import {
@@ -673,6 +674,16 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
   const hasImageCapability = Boolean(capabilities?.supports_images && capabilities?.image_inputs);
   const hasSkillCapability = Boolean(capabilities?.skills_input);
   const displayThreadTitle = getDisplayThreadTitle(locale, transcript?.thread);
+  const isOfflineFallbackThread = useMemo(() => {
+    if (!transcript?.thread) {
+      return false;
+    }
+
+    return (
+      isRecoveryFallbackThread(transcript.thread) &&
+      capabilities?.shared_state_available === false
+    );
+  }, [capabilities?.shared_state_available, transcript?.thread]);
   const headerSubtitle = transcript
     ? `${transcript.thread.project_label} · ${formatTimestamp(locale, transcript.thread.updated_at)}`
     : localize(locale, {
@@ -1317,6 +1328,14 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
           >
             <div className={styles.timelineInner}>
               <ChatTimeline
+                emptyMessage={
+                  isOfflineFallbackThread
+                    ? localize(locale, {
+                        zh: "共享网关当前离线，暂时拿不到这条聊天的消息。",
+                        en: "The shared gateway is offline, so messages for this chat are unavailable right now."
+                      })
+                    : undefined
+                }
                 hasMoreRemoteHistory={Boolean(transcript?.has_more)}
                 hiddenItemCount={hiddenTimelineItemCount}
                 isLoading={isLoading}

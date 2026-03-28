@@ -90,3 +90,11 @@
 - 同时加入 acceptance notes：`verify-smoke` 是首选 smoke 入口；Chromium MachPort 权限错误属于当前 sandbox blocker；gateway 验证遇到 SQLite 锁时应使用隔离 `CODEX_HOME`。
 - 验证基线延续上一轮：文档前一轮代码改动已通过 `corepack pnpm check`、`corepack pnpm test`，运行态入口 `HEAD /projects`、`HEAD /threads/thread_demo` 和 `GET /health` 均正常。
 - 剩余未完成项：只有 Feature #11 仍受当前环境的浏览器权限限制，需要在能启动 Playwright Chromium 的宿主环境中完成最终手机端运行态验收。
+
+## Session — 2026-03-28 20:49
+- 修复本轮运行态故障：`http://127.0.0.1:3000/queue` 可访问但一直空白，根因不是页面路由损坏，而是 8787 上的 gateway 进程继承了错误的 `CODEX_HOME=/tmp/codex-remote-gateway-runtime`，导致 `/api/overview` 进入 degraded 模式并返回 `threads=0`。
+- 已现场恢复服务：重启 8787 上的 gateway 后，`/api/overview` 恢复为 `thread_count=133`、`shared_state_available=true`、`codex_home=/Users/miau/.codex`；3000 上的 `/api/overview` 也返回相同结果，Codex app 线程重新可见。
+- 更新 `init.sh`：启动前不再只看 `/health=200`，而会额外校验 `/api/overview.capabilities.shared_state_available` 和 `codex_home` 是否指向期望目录；若发现“健康但降级”的旧 gateway，会先杀掉 8787 监听进程再按期望 `CODEX_HOME` 重启。
+- 同时修复 harness 自检误报：测试阶段改为使用临时 `CODEX_HOME` 跑 `corepack pnpm test`，避免与正在使用 `~/.codex/state_5.sqlite` 的真实 gateway 争锁导致 `database is locked`。
+- 验证通过：`bash init.sh` 现已在当前环境完整通过并以 `errors: 0` 结束；`curl -sS http://127.0.0.1:8787/api/overview` 与 `curl -sS http://127.0.0.1:3000/api/overview` 均显示 `thread_count=133`、`shared_state_available=true`；`HEAD /queue` 返回 `200`。
+- 说明：这次是运行环境修复，不单独标记 PLAN feature 完成；Feature #11 仍保留为未完成，因为“列表 -> 线程 -> 详情/附件入口”的浏览器态验收还需要能启动 Playwright Chromium 的宿主环境。

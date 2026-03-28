@@ -4,6 +4,36 @@
 
 cd "$(dirname "$0")"
 ERRORS=0
+EXPECTED_CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+
+read_gateway_runtime() {
+  local overview
+  overview="$(curl -fsS http://127.0.0.1:8787/api/overview 2>/dev/null || true)"
+  if [ -z "$overview" ]; then
+    return 1
+  fi
+
+  printf '%s' "$overview" | node -e '
+    let data = "";
+    process.stdin.on("data", (chunk) => {
+      data += chunk;
+    });
+    process.stdin.on("end", () => {
+      try {
+        const json = JSON.parse(data);
+        const capabilities = json.capabilities ?? {};
+        const shared = capabilities.shared_state_available === true ? "true" : "false";
+        const codexHome =
+          typeof capabilities.codex_home === "string" ? capabilities.codex_home : "";
+        const expected = process.env.EXPECTED_CODEX_HOME ?? "";
+        const ok = shared === "true" && (!expected || codexHome === expected) ? "true" : "false";
+        process.stdout.write([ok, shared, codexHome].join("|"));
+      } catch {
+        process.exit(1);
+      }
+    });
+  '
+}
 
 echo "=== 1. 环境 ==="
 if [ ! -d node_modules ]; then
@@ -21,20 +51,40 @@ corepack pnpm check || {
   echo "⚠️  pnpm check 失败"
   ERRORS=$((ERRORS + 1))
 }
-corepack pnpm test || {
+HARNESS_TEST_CODEX_HOME="$(mktemp -d "${TMPDIR:-/tmp}/codex-remote-init-tests.XXXXXX")"
+CODEX_HOME="$HARNESS_TEST_CODEX_HOME" corepack pnpm test || {
   echo "⚠️  pnpm test 失败"
   ERRORS=$((ERRORS + 1))
 }
+rm -rf "$HARNESS_TEST_CODEX_HOME"
 
 echo "=== 3. 启动服务 ==="
 mkdir -p output
 
 GATEWAY_HTTP_CODE="$(curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1:8787/health 2>/dev/null || echo "000")"
-if [ "$GATEWAY_HTTP_CODE" = "200" ]; then
+GATEWAY_RUNTIME_STATUS="$(EXPECTED_CODEX_HOME="$EXPECTED_CODEX_HOME" read_gateway_runtime || true)"
+GATEWAY_RUNTIME_OK="false"
+GATEWAY_SHARED_STATE="unknown"
+GATEWAY_RUNTIME_HOME=""
+if [ -n "$GATEWAY_RUNTIME_STATUS" ]; then
+  IFS='|' read -r GATEWAY_RUNTIME_OK GATEWAY_SHARED_STATE GATEWAY_RUNTIME_HOME <<EOF
+$GATEWAY_RUNTIME_STATUS
+EOF
+fi
+
+if [ "$GATEWAY_HTTP_CODE" = "200" ] && [ "$GATEWAY_RUNTIME_OK" = "true" ]; then
   echo "Gateway 已运行。"
 else
+  if [ "$GATEWAY_HTTP_CODE" = "200" ]; then
+    echo "检测到现有 Gateway 处于降级态（shared_state=${GATEWAY_SHARED_STATE}, codex_home=${GATEWAY_RUNTIME_HOME:-unknown}，expected=${EXPECTED_CODEX_HOME}），准备重启。"
+    EXISTING_GATEWAY_PID="$(lsof -tiTCP:8787 -sTCP:LISTEN 2>/dev/null | head -n 1 || true)"
+    if [ -n "$EXISTING_GATEWAY_PID" ]; then
+      kill "$EXISTING_GATEWAY_PID" 2>/dev/null || true
+      sleep 2
+    fi
+  fi
   echo "启动 Gateway..."
-  nohup ./scripts/start-gateway.sh > output/harness-gateway.log 2>&1 &
+  CODEX_HOME="$EXPECTED_CODEX_HOME" nohup ./scripts/start-gateway.sh > output/harness-gateway.log 2>&1 &
   sleep 5
 fi
 
@@ -49,10 +99,19 @@ fi
 
 echo "=== 4. 健康检查 ==="
 GATEWAY_HTTP_CODE="$(curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1:8787/health 2>/dev/null || echo "000")"
-if [ "$GATEWAY_HTTP_CODE" = "200" ]; then
-  echo "✅ Gateway /health 正常"
+GATEWAY_RUNTIME_STATUS="$(EXPECTED_CODEX_HOME="$EXPECTED_CODEX_HOME" read_gateway_runtime || true)"
+GATEWAY_RUNTIME_OK="false"
+GATEWAY_SHARED_STATE="unknown"
+GATEWAY_RUNTIME_HOME=""
+if [ -n "$GATEWAY_RUNTIME_STATUS" ]; then
+  IFS='|' read -r GATEWAY_RUNTIME_OK GATEWAY_SHARED_STATE GATEWAY_RUNTIME_HOME <<EOF
+$GATEWAY_RUNTIME_STATUS
+EOF
+fi
+if [ "$GATEWAY_HTTP_CODE" = "200" ] && [ "$GATEWAY_RUNTIME_OK" = "true" ]; then
+  echo "✅ Gateway /health 正常，shared state 可用 (${GATEWAY_RUNTIME_HOME})"
 else
-  echo "⚠️  Gateway /health 返回 $GATEWAY_HTTP_CODE"
+  echo "⚠️  Gateway 运行态异常（health=${GATEWAY_HTTP_CODE}，shared_state=${GATEWAY_SHARED_STATE}，codex_home=${GATEWAY_RUNTIME_HOME:-unknown}，expected=${EXPECTED_CODEX_HOME}）"
   ERRORS=$((ERRORS + 1))
 fi
 

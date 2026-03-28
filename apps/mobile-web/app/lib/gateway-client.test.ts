@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  GatewayRequestError,
+  getCodexCapabilities,
   getCodexDiagnosticsSummary,
+  getCodexMessagesLatest,
   getCodexOverview,
   getThreadSkills,
   subscribeToThreadStream,
@@ -328,6 +331,46 @@ describe("gateway reads", () => {
         description: "Run project checks"
       }
     ]);
+  });
+
+  it("falls back to degraded snapshots only when the gateway is unreachable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("fetch failed");
+      })
+    );
+
+    const capabilities = await getCodexCapabilities();
+    const transcript = await getCodexMessagesLatest("thread-offline", 5);
+
+    expect(capabilities.degraded).toBe(true);
+    expect(transcript.thread.degraded).toBe(true);
+    expect(transcript.thread.degraded_reason).toBe("gateway_offline");
+    expect(transcript.thread.sync_state).toBe("sync_failed");
+  });
+
+  it("does not hide HTTP errors behind degraded fallback snapshots", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            error: "unknown_thread"
+          }),
+          {
+            status: 404,
+            headers: {
+              "Content-Type": "application/json"
+            }
+          }
+        )
+      )
+    );
+
+    await expect(getThreadSkills("missing-thread")).rejects.toBeInstanceOf(
+      GatewayRequestError
+    );
   });
 
   it("updates shared settings with a PATCH request", async () => {

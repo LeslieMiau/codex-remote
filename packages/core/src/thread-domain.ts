@@ -31,6 +31,8 @@ export interface BuildMirroredCodexThreadInput {
   syncState: CodexSyncState;
   title: string;
   pending: PendingThreadCounts;
+  degraded?: boolean;
+  degradedReason?: string;
 }
 
 export function isTerminalTurnState(state: TurnRecord["state"]) {
@@ -211,6 +213,8 @@ export function buildMirroredCodexThread(
     active_turn_id: input.thread.active_turn_id,
     last_stream_seq: input.thread.last_stream_seq,
     sync_state: input.syncState,
+    degraded: input.degraded,
+    degraded_reason: input.degradedReason,
     adapter_thread_ref: input.thread.adapter_thread_ref,
     native_status_type: input.thread.native_status_type,
     native_active_flags: input.thread.native_active_flags,

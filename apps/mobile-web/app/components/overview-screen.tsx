@@ -509,9 +509,10 @@ export function OverviewScreen() {
                       en: "No matching chats."
                     })
                   : isFallbackOnlyOverview
-                    ? localize(locale, {
-                        zh: "共享网关当前离线，聊天列表暂时不可用。",
-                        en: "The shared gateway is offline, so chats are unavailable right now."
+                    ? overview?.capabilities.reason ??
+                      localize(locale, {
+                        zh: "共享聊天状态暂时不可用。",
+                        en: "Shared chat state is temporarily unavailable."
                       })
                     : localize(locale, {
                         zh: "还没有可显示的聊天。",
@@ -526,8 +527,8 @@ export function OverviewScreen() {
                     })
                   : isFallbackOnlyOverview
                     ? localize(locale, {
-                        zh: "等网关恢复后，这里会自动出现真实会话。",
-                        en: "Real chats will appear here once the gateway reconnects."
+                        zh: "恢复后，这里会自动显示可同步的真实会话。",
+                        en: "Once recovery completes, synchronized chats will appear here automatically."
                       })
                   : localize(locale, {
                       zh: "从这里开始第一条对话。",
@@ -542,8 +543,8 @@ export function OverviewScreen() {
                     })
                   : isFallbackOnlyOverview
                     ? localize(locale, {
-                        zh: "当前只保留离线兜底数据，异常恢复线程不会显示在主列表中。",
-                        en: "Only offline fallback data is available, and recovery threads stay hidden from the main list."
+                        zh: "当前只保留退化模式下的恢复数据，恢复线程默认不会显示在主列表中。",
+                        en: "Only degraded recovery data is available, and recovery threads stay hidden from the main list by default."
                       })
                   : localize(locale, {
                       zh: "新聊天会直接进入共享会话。",

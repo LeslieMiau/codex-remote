@@ -109,6 +109,8 @@ describe("GatewayReadModelService", () => {
     expect(thread?.state).toBe("waiting_approval");
     expect(thread?.pending_approvals).toBe(1);
     expect(thread?.project_label).toBe("codex-remote");
+    expect(thread?.degraded).toBe(true);
+    expect(thread?.degraded_reason).toBe("recovery_fallback");
   });
 
   it("builds fallback transcripts with live state when native state is unavailable", async () => {
@@ -158,6 +160,8 @@ describe("GatewayReadModelService", () => {
     });
 
     expect(transcript?.thread.state).toBe("completed");
+    expect(transcript?.thread.degraded).toBe(true);
+    expect(transcript?.thread.sync_state).toBe("sync_failed");
     expect(transcript?.items).toHaveLength(1);
     expect(transcript?.live_state?.detail).toBe("Done");
   });

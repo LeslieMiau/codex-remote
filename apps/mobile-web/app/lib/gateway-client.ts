@@ -108,7 +108,10 @@ async function readOrFallback<T>(pathname: string, fallback: () => T): Promise<T
     return await requestJson<T>(pathname, {
       method: "GET"
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof GatewayRequestError) {
+      throw error;
+    }
     return fallback();
   }
 }
@@ -118,6 +121,7 @@ function buildCapabilities(): CodexCapabilitiesResponse {
     adapter_kind: "codex-app-server",
     collaboration_mode: "default",
     shared_state_available: false,
+    degraded: true,
     shared_thread_create: false,
     supports_images: false,
     run_start: false,
@@ -159,7 +163,9 @@ function buildThread(threadId = "recovered-thread"): CodexThread {
     pending_native_requests: 0,
     active_turn_id: null,
     last_stream_seq: 0,
-    sync_state: "native_confirmed",
+    sync_state: "sync_failed",
+    degraded: true,
+    degraded_reason: "gateway_offline",
     updated_at: now()
   };
 }

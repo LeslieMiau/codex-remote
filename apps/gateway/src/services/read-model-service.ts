@@ -100,7 +100,9 @@ export class GatewayReadModelService {
       source: thread.adapter_kind ?? "gateway_fallback",
       syncState: thread.active_turn_id ? "sync_pending" : "sync_failed",
       title: truncateTitle(thread.native_title ?? turns.at(0)?.prompt ?? thread.thread_id),
-      pending: pendingCounts(this.store, thread.thread_id)
+      pending: pendingCounts(this.store, thread.thread_id),
+      degraded: true,
+      degradedReason: "recovery_fallback"
     });
 
     return state;

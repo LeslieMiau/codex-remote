@@ -709,6 +709,7 @@ export class CodexStateBridge {
       collaboration_mode: "default",
       codex_home: this.codexHome,
       shared_state_available: sharedStateAvailable,
+      degraded: !sharedStateAvailable,
       shared_thread_create: canControlSharedThreads,
       supports_images: canControlSharedThreads,
       run_start: canControlSharedThreads,
@@ -853,7 +854,9 @@ export class CodexStateBridge {
         approvals: pendingApprovals,
         native_requests: pendingNativeRequests,
         patches: pendingPatches
-      }
+      },
+      degraded: true,
+      degradedReason: "shared_state_unavailable"
     });
 
     return {

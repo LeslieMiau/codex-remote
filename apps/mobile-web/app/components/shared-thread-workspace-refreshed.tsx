@@ -1331,8 +1331,8 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                 emptyMessage={
                   isOfflineFallbackThread
                     ? localize(locale, {
-                        zh: "共享网关当前离线，暂时拿不到这条聊天的消息。",
-                        en: "The shared gateway is offline, so messages for this chat are unavailable right now."
+                        zh: "共享聊天状态当前处于退化模式，这条聊天的消息暂时不可用。",
+                        en: "Shared chat state is degraded right now, so messages for this chat are temporarily unavailable."
                       })
                     : undefined
                 }

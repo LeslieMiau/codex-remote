@@ -11,6 +11,7 @@ describe("chat thread presentation", () => {
   it("flags gateway fallback threads as recovery copies", () => {
     expect(
       isRecoveryFallbackThread({
+        degraded: true,
         project_label: "Recovered project",
         source: "gateway_fallback",
         title: "Recovered thread"
@@ -21,6 +22,7 @@ describe("chat thread presentation", () => {
   it("hides recovery titles behind a neutral chat label", () => {
     expect(
       getDisplayThreadTitle("en", {
+        degraded: true,
         project_label: "Recovered project",
         source: "gateway_fallback",
         title: "Recovered thread"
@@ -28,6 +30,7 @@ describe("chat thread presentation", () => {
     ).toBe("Chat");
     expect(
       getDisplayThreadTitle("zh", {
+        degraded: true,
         project_label: "Recovered project",
         source: "gateway_fallback",
         title: "Recovered thread"
@@ -38,6 +41,7 @@ describe("chat thread presentation", () => {
   it("keeps real thread titles untouched", () => {
     expect(
       getDisplayThreadTitle("en", {
+        degraded: false,
         project_label: "codex-remote",
         source: "native_confirmed",
         title: "Fix mobile chat layout"
@@ -49,6 +53,7 @@ describe("chat thread presentation", () => {
     expect(
       hasBlockingThreadAttention({
         archived: false,
+        degraded: false,
         pending_approvals: 0,
         pending_native_requests: 1,
         pending_patches: 0,
@@ -62,6 +67,7 @@ describe("chat thread presentation", () => {
     expect(
       hasBlockingThreadAttention({
         archived: false,
+        degraded: false,
         pending_approvals: 0,
         pending_native_requests: 0,
         pending_patches: 0,
@@ -77,6 +83,7 @@ describe("chat thread presentation", () => {
     expect(
       shouldHideThreadFromMobileList({
         archived: true,
+        degraded: false,
         pending_approvals: 0,
         pending_native_requests: 0,
         pending_patches: 0,
@@ -90,6 +97,7 @@ describe("chat thread presentation", () => {
     expect(
       shouldHideThreadFromMobileList({
         archived: false,
+        degraded: true,
         pending_approvals: 0,
         pending_native_requests: 0,
         pending_patches: 0,
@@ -103,6 +111,7 @@ describe("chat thread presentation", () => {
     expect(
       shouldHideThreadFromMobileList({
         archived: false,
+        degraded: true,
         pending_approvals: 1,
         pending_native_requests: 0,
         pending_patches: 0,

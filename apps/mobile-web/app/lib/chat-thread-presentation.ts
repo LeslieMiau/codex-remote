@@ -4,10 +4,14 @@ import { localize, type Locale } from "./locale";
 
 const RECOVERY_COPY_PATTERN = /^recovered\b/i;
 
-type ThreadPreview = Pick<CodexThread, "project_label" | "source" | "title">;
+type ThreadPreview = Pick<
+  CodexThread,
+  "degraded" | "project_label" | "source" | "title"
+>;
 type MobileThreadPreview = Pick<
   CodexThread,
   | "archived"
+  | "degraded"
   | "pending_approvals"
   | "pending_native_requests"
   | "pending_patches"
@@ -23,6 +27,7 @@ export function isRecoveryFallbackThread(thread: ThreadPreview | null | undefine
   }
 
   return (
+    thread.degraded === true ||
     thread.source === "gateway_fallback" ||
     RECOVERY_COPY_PATTERN.test(thread.title ?? "") ||
     RECOVERY_COPY_PATTERN.test(thread.project_label ?? "")

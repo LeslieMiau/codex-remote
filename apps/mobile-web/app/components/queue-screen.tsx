@@ -486,9 +486,10 @@ export function QueueScreen() {
           <section className={styles.empty}>
             <p>
               {isFallbackOnlyOverview
-                ? localize(locale, {
-                    zh: "共享网关当前离线，收件箱暂时没有可同步的事项。",
-                    en: "The shared gateway is offline, so the inbox cannot sync right now."
+                ? overview?.capabilities.reason ??
+                  localize(locale, {
+                    zh: "共享聊天状态暂时不可用，收件箱目前无法同步。",
+                    en: "Shared chat state is temporarily unavailable, so the inbox cannot sync right now."
                   })
                 : inputFocusFilter === "all" || !showFilterBar
                 ? localize(locale, {

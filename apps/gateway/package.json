@@ -10,7 +10,7 @@
     "check": "tsc --project tsconfig.json --noEmit",
     "dev": "tsup src/index.ts src/cli.ts --format esm --dts --watch --onSuccess \"node dist/cli.js\"",
     "start": "node dist/cli.js",
-    "test": "vitest run"
+    "test": "corepack pnpm --filter @codex-remote/core build && vitest run"
   },
   "dependencies": {
     "@codex-remote/core": "workspace:*",

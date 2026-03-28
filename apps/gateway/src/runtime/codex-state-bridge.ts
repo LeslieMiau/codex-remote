@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { buildMirroredCodexThread, deriveMirroredSyncState } from "@codex-remote/core";
 import {
   CURRENT_SCHEMA_VERSION,
   type CodexCapabilities,
@@ -841,58 +842,26 @@ export class CodexStateBridge {
       .listPatches(thread.thread_id)
       .filter((patch) => patch.status !== "applied" && patch.status !== "discarded").length;
 
-    let state: CodexThread["state"] = "ready";
-    if (thread.state === "archived" || thread.native_archived) {
-      state = "archived";
-    } else if (thread.state === "failed") {
-      state = "failed";
-    } else if (thread.state === "interrupted") {
-      state = "interrupted";
-    } else if (pendingNativeRequests > 0 || thread.state === "waiting_input") {
-      state = "waiting_input";
-    } else if (pendingApprovals > 0 || thread.state === "waiting_approval") {
-      state = "waiting_approval";
-    } else if (pendingPatches > 0) {
-      state = "needs_review";
-    } else if (thread.active_turn_id || thread.state === "running") {
-      state = "running";
-    } else if (thread.state === "completed") {
-      state = "completed";
-    }
-
-    const syncState: CodexSyncState =
-      !thread.adapter_thread_ref ||
-      state === "running" ||
-      state === "waiting_approval" ||
-      state === "waiting_input"
-        ? "sync_pending"
-        : "sync_failed";
+    const projected = buildMirroredCodexThread({
+      thread,
+      projectLabel: projectLabelFromRepoRoot(project.repo_root),
+      repoRoot: project.repo_root,
+      source: thread.adapter_kind ?? "gateway_fallback",
+      syncState: "sync_failed",
+      title: thread.native_title ?? turns.at(0)?.prompt ?? thread.thread_id,
+      pending: {
+        approvals: pendingApprovals,
+        native_requests: pendingNativeRequests,
+        patches: pendingPatches
+      }
+    });
 
     return {
-      thread_id: thread.thread_id,
-      project_id: thread.project_id,
-      title: thread.native_title ?? turns.at(0)?.prompt ?? thread.thread_id,
-      project_label: projectLabelFromRepoRoot(project.repo_root),
-      repo_root: project.repo_root,
-      source: thread.adapter_kind ?? "gateway_fallback",
-      state,
-      archived: Boolean(thread.native_archived || thread.state === "archived"),
-      has_active_run:
-        Boolean(thread.active_turn_id) &&
-        (state === "running" || state === "waiting_approval"),
-      pending_approvals: pendingApprovals,
-      pending_patches: pendingPatches,
-      pending_native_requests: pendingNativeRequests,
-      worktree_path: thread.worktree_path,
-      active_turn_id: thread.active_turn_id,
-      last_stream_seq: thread.last_stream_seq,
-      sync_state: syncState,
-      adapter_thread_ref: thread.adapter_thread_ref,
-      native_status_type: thread.native_status_type,
-      native_active_flags: thread.native_active_flags,
-      native_token_usage: thread.native_token_usage,
-      created_at: thread.created_at ?? thread.updated_at,
-      updated_at: thread.updated_at
+      ...projected,
+      sync_state: deriveMirroredSyncState({
+        adapterThreadRef: thread.adapter_thread_ref,
+        state: projected.state
+      })
     };
   }
 

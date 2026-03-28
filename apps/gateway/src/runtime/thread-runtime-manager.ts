@@ -14,6 +14,11 @@ import type {
   RejectCommand,
   PatchRecord
 } from "@codex-remote/protocol";
+import {
+  deriveThreadSnapshotState,
+  isTerminalTurnState,
+  progressToTurnState
+} from "@codex-remote/core";
 import { CURRENT_SCHEMA_VERSION } from "@codex-remote/protocol";
 
 import type {
@@ -87,31 +92,6 @@ function appendPendingTurn(thread: ThreadSnapshot, turnId: string): ThreadSnapsh
 
 function removePendingTurn(thread: ThreadSnapshot, turnId: string) {
   return thread.pending_turn_ids.filter((candidate) => candidate !== turnId);
-}
-
-function isTerminalTurnState(state: TurnRecord["state"]) {
-  return state === "completed" || state === "failed" || state === "interrupted";
-}
-
-function progressToTurnState(
-  current: TurnRecord["state"],
-  input: { resumed?: boolean }
-): TurnRecord["state"] {
-  if (input.resumed) {
-    return "resumed";
-  }
-  if (current === "queued") {
-    return "started";
-  }
-  if (
-    current === "started" ||
-    current === "resumed" ||
-    current === "waiting_approval" ||
-    current === "waiting_input"
-  ) {
-    return "streaming";
-  }
-  return current;
 }
 
 function approvalStatusFromCommand(
@@ -1099,38 +1079,22 @@ export class ThreadRuntimeManager {
     const activeTurnId = input.clearActiveTurn ? null : thread.active_turn_id;
     const activeTurn = activeTurnId ? this.store.getTurn(activeTurnId) : undefined;
 
-    let state: ThreadSnapshot["state"];
-    if (thread.state === "archived" || thread.native_archived) {
-      state = "archived";
-    } else if (input.forceState) {
-      state = input.forceState;
-    } else if (pendingNativeRequests.length > 0) {
-      state = "waiting_input";
-    } else if (pendingApprovals.length > 0) {
-      state = "waiting_approval";
-    } else if (pendingPatches.length > 0) {
-      state = "needs_review";
-    } else if (activeTurnId && this.executions.has(activeTurnId)) {
-      state = "running";
-    } else if (activeTurn?.state === "interrupted") {
-      state = "interrupted";
-    } else if (activeTurn?.state === "failed") {
-      state = "failed";
-    } else if (activeTurn?.state === "completed") {
-      state = "completed";
-    } else {
-      const turns = this.store.listTurns(threadId);
-      const latestTurn = turns.at(-1);
-      if (latestTurn?.state === "failed") {
-        state = "failed";
-      } else if (latestTurn?.state === "interrupted") {
-        state = "interrupted";
-      } else if (latestTurn?.state === "completed") {
-        state = "completed";
-      } else {
-        state = "ready";
-      }
-    }
+    const turns = this.store.listTurns(threadId);
+    const latestTurn = turns.at(-1);
+    const state = deriveThreadSnapshotState({
+      threadState: thread.state,
+      nativeArchived: thread.native_archived,
+      pending: {
+        approvals: pendingApprovals.length,
+        native_requests: pendingNativeRequests.length,
+        patches: pendingPatches.length
+      },
+      activeTurnId,
+      activeTurnState: activeTurn?.state,
+      latestTurnState: latestTurn?.state,
+      hasActiveExecution: activeTurnId ? this.executions.has(activeTurnId) : false,
+      forceState: input.forceState
+    });
 
     return this.store.saveThread({
       ...thread,

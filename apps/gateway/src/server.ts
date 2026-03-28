@@ -9,6 +9,7 @@ import Fastify, { type FastifyInstance, type RouteHandlerMethod } from "fastify"
 import type { FastifyReply } from "fastify";
 import { WebSocketServer, type WebSocket } from "ws";
 
+import { requiresMaterializedThreadControl } from "@codex-remote/core";
 import {
   ApplyPatchCommandSchema,
   ApproveCommandSchema,
@@ -35,7 +36,6 @@ import {
   UnarchiveThreadCommandSchema,
   type ApprovalActionResponse,
   type CodexDiagnosticsSummaryResponse,
-  type CodexMessage,
   type CodexThreadSkill,
   type CodexThreadSkillsResponse,
   type NativeRequestActionResponse,
@@ -58,6 +58,8 @@ import { GatewayStore } from "./lib/store";
 import { evaluateTailscaleAccess, type TailscaleAuthConfig } from "./lib/tailscale-auth";
 import { nowIso } from "./lib/time";
 import { createUlid } from "./lib/ulid";
+import { GatewayReadModelService } from "./services/read-model-service";
+import { GatewayRunService } from "./services/run-service";
 import {
   CodexCommandBridge,
   type CodexCommandBridgeOptions
@@ -195,279 +197,10 @@ function dedupKey(input: {
   };
 }
 
-function projectLabelFromRepoRoot(repoRoot: string) {
-  const normalized = repoRoot.split(/[\\/]/).filter(Boolean);
-  return normalized.at(-1) ?? repoRoot;
-}
-
-function truncateTitle(value: string, max = 96) {
-  const normalized = value.trim();
-  if (normalized.length <= max) {
-    return normalized;
-  }
-  return `${normalized.slice(0, max - 3)}...`;
-}
-
-function localThreadActionConflict(store: GatewayStore, threadId: string) {
-  const thread = store.getThread(threadId);
-  if (!thread) {
-    return null;
-  }
-
-  const pendingApprovals = store
-    .listApprovals(threadId)
-    .filter((approval) => approval.status === "requested").length;
-  if (pendingApprovals > 0) {
-    return "approval_required";
-  }
-
-  const pendingNativeRequests = store
-    .listNativeRequests(threadId)
-    .filter((nativeRequest) => nativeRequest.status === "requested").length;
-  if (pendingNativeRequests > 0) {
-    return "input_required";
-  }
-
-  const pendingPatches = store
-    .listPatches(threadId)
-    .filter((patch) => patch.status !== "applied" && patch.status !== "discarded").length;
-  if (pendingPatches > 0) {
-    return "patch_review_required";
-  }
-
-  if (
-    thread.active_turn_id &&
-    (thread.state === "running" || thread.state === "waiting_approval")
-  ) {
-    return "active_run_in_progress";
-  }
-
-  return null;
-}
-
-function requiresMaterializedSharedThreadControl(thread: CodexThread) {
-  return !thread.adapter_thread_ref || thread.sync_state === "sync_pending";
-}
-
 function sendThreadSyncPending(reply: FastifyReply) {
   reply.code(409);
   return {
     error: "thread_sync_pending"
-  };
-}
-
-function fallbackThreadFromStore(store: GatewayStore, threadId: string): CodexThread | null {
-  const thread = store.getThread(threadId) ?? store.findThreadByAdapterRef(threadId);
-  if (!thread) {
-    return null;
-  }
-
-  const project = store.getProject(thread.project_id);
-  if (!project) {
-    return null;
-  }
-
-  const turns = store.listTurns(thread.thread_id);
-  const pendingApprovals = store
-    .listApprovals(thread.thread_id)
-    .filter((approval) => approval.status === "requested");
-  const pendingNativeRequests = store
-    .listNativeRequests(thread.thread_id)
-    .filter((nativeRequest) => nativeRequest.status === "requested");
-  const pendingPatches = store
-    .listPatches(thread.thread_id)
-    .filter((patch) => patch.status !== "applied" && patch.status !== "discarded");
-
-  let state: CodexThread["state"] = "ready";
-  if (thread.state === "archived" || thread.native_archived) {
-    state = "archived";
-  } else if (thread.state === "failed") {
-    state = "failed";
-  } else if (thread.state === "interrupted") {
-    state = "interrupted";
-  } else if (pendingNativeRequests.length > 0) {
-    state = "waiting_input";
-  } else if (pendingApprovals.length > 0) {
-    state = "waiting_approval";
-  } else if (pendingPatches.length > 0) {
-    state = "needs_review";
-  } else if (thread.active_turn_id || thread.state === "running") {
-    state = "running";
-  } else if (thread.state === "completed") {
-    state = "completed";
-  }
-
-  return {
-    thread_id: thread.thread_id,
-    project_id: thread.project_id,
-    title: truncateTitle(thread.native_title ?? turns.at(0)?.prompt ?? thread.thread_id),
-    project_label: projectLabelFromRepoRoot(project.repo_root),
-    repo_root: project.repo_root,
-    source: thread.adapter_kind,
-    state,
-    archived: Boolean(thread.native_archived || thread.state === "archived"),
-    has_active_run: Boolean(thread.active_turn_id),
-    pending_approvals: pendingApprovals.length,
-    pending_patches: pendingPatches.length,
-    pending_native_requests: pendingNativeRequests.length,
-    worktree_path: thread.worktree_path,
-    active_turn_id: thread.active_turn_id,
-    last_stream_seq: thread.last_stream_seq,
-    sync_state: thread.active_turn_id ? "sync_pending" : "sync_failed",
-    adapter_thread_ref: thread.adapter_thread_ref,
-    native_status_type: thread.native_status_type,
-    native_active_flags: thread.native_active_flags,
-    native_token_usage: thread.native_token_usage,
-    created_at: thread.created_at ?? thread.updated_at,
-    updated_at: thread.updated_at
-  };
-}
-
-function buildFallbackTimeline(store: GatewayStore, threadId: string) {
-  const thread = fallbackThreadFromStore(store, threadId);
-  if (!thread) {
-    return null;
-  }
-
-  const turns = store.listTurns(thread.thread_id);
-  const approvals = store.listApprovals(thread.thread_id);
-  const nativeRequests = store.listNativeRequests(thread.thread_id);
-  const patches = store.listPatches(thread.thread_id);
-  const events = store.listEvents(thread.thread_id, 0, 2_000);
-
-  const items = [
-    ...turns.map((turn) => ({
-      item_id: `turn-${turn.turn_id}`,
-      thread_id: thread.thread_id,
-      timestamp: turn.created_at,
-      origin: "gateway_fallback" as const,
-      kind: "user_message" as const,
-      title: "You",
-      body: turn.prompt,
-      turn_id: turn.turn_id,
-      action_required: false,
-      mono: false
-    })),
-    ...events.map((event) => ({
-      item_id: event.event_id ?? `event-${event.stream_seq}`,
-      thread_id: thread.thread_id,
-      timestamp: event.timestamp ?? thread.updated_at,
-      origin: "gateway_fallback" as const,
-      kind:
-        event.event_type === "turn.progress"
-          ? ("assistant_message" as const)
-          : ("status" as const),
-      title:
-        typeof event.payload.step === "string"
-          ? String(event.payload.step)
-          : String(event.event_type),
-      body:
-        typeof event.payload.message === "string"
-          ? String(event.payload.message)
-          : typeof event.payload.summary === "string"
-            ? String(event.payload.summary)
-            : undefined,
-      turn_id: event.turn_id,
-      action_required: false,
-      mono: false
-    })),
-    ...approvals.map((approval) => ({
-      item_id: `approval-${approval.approval_id}`,
-      thread_id: thread.thread_id,
-      timestamp: approval.resolved_at ?? approval.requested_at,
-      origin: "gateway_fallback" as const,
-      kind: "approval" as const,
-      title:
-        approval.status === "requested"
-          ? "Waiting for approval"
-          : `Approval ${approval.status}`,
-      body: approval.reason,
-      status: approval.status,
-      turn_id: approval.turn_id,
-      approval_id: approval.approval_id,
-      action_required: approval.status === "requested",
-      mono: false
-    })),
-    ...patches.map((patch) => ({
-      item_id: `patch-${patch.patch_id}`,
-      thread_id: thread.thread_id,
-      timestamp: patch.updated_at,
-      origin: "gateway_fallback" as const,
-      kind: "patch" as const,
-      title: patch.summary,
-      body: patch.files.map((file) => file.path).join(", "),
-      status: patch.status,
-      turn_id: patch.turn_id,
-      patch_id: patch.patch_id,
-      action_required: patch.status !== "applied" && patch.status !== "discarded",
-      mono: false
-    }))
-  ].sort((left, right) => left.timestamp.localeCompare(right.timestamp));
-
-  return {
-    thread,
-    items,
-    approvals,
-    patches,
-    native_requests: nativeRequests
-  };
-}
-
-function buildFallbackTranscript(
-  store: GatewayStore,
-  threadId: string,
-  input: {
-    cursor?: string;
-    limit?: number;
-  } = {}
-) {
-  const timeline = buildFallbackTimeline(store, threadId);
-  if (!timeline) {
-    return null;
-  }
-
-  const messages: CodexMessage[] = timeline.items.map((item) => ({
-    message_id: item.item_id,
-    thread_id: item.thread_id,
-    timestamp: item.timestamp,
-    role:
-      item.kind === "user_message"
-        ? "user"
-        : item.kind === "assistant_message"
-          ? "assistant"
-          : "system_action",
-    body: item.body,
-    title: item.title,
-    turn_id: item.turn_id,
-    origin: item.origin,
-    status: "status" in item ? item.status : undefined,
-    approval_id: "approval_id" in item ? item.approval_id : undefined,
-    patch_id: "patch_id" in item ? item.patch_id : undefined,
-    action_required: item.action_required,
-    details: []
-  }));
-
-  const limit = Math.max(1, Math.min(input.limit ?? 20, 100));
-  const endIndex =
-    typeof input.cursor === "string"
-      ? Math.max(
-          0,
-          messages.findIndex((message) => message.message_id === input.cursor)
-        )
-      : messages.length;
-  const startIndex = Math.max(0, endIndex - limit);
-  const pageItems = messages.slice(startIndex, endIndex === -1 ? messages.length : endIndex);
-  const hasMore = startIndex > 0;
-
-  return {
-    thread: timeline.thread,
-    items: pageItems,
-    approvals: timeline.approvals.filter((approval) => approval.source === "native"),
-    patches: timeline.patches,
-    native_requests: timeline.native_requests,
-    live_state: store.getLiveState(timeline.thread.thread_id),
-    next_cursor: hasMore ? messages[startIndex].message_id : undefined,
-    has_more: hasMore
   };
 }
 
@@ -499,7 +232,12 @@ function routeErrorStatus(message: string) {
     message === "approval_decision_not_allowed" ||
     message === "native_request_not_pending" ||
     message === "native_request_unrecoverable" ||
-    message === "patch_not_pending"
+    message === "patch_not_pending" ||
+    message === "archived_thread" ||
+    message === "approval_required" ||
+    message === "input_required" ||
+    message === "patch_review_required" ||
+    message === "active_run_in_progress"
   ) {
     return 409;
   }
@@ -564,6 +302,8 @@ export async function createGatewayServer(
     isTurnActive: (turnId) => manager.hasActiveExecution(turnId)
   });
   await bridge.start();
+  const readModels = new GatewayReadModelService(store, bridge);
+  const runService = new GatewayRunService(store, readModels, manager);
 
   const tailscaleAuth = options.tailscaleAuth ?? {
     mode: "off" as const,
@@ -635,7 +375,7 @@ export async function createGatewayServer(
 
   registerGet("/overview", async (request) => {
     const query = request.query as { include_archived?: string } | undefined;
-    return bridge.getOverview({
+    return readModels.getOverview({
       includeArchived: queryBoolean(query?.include_archived)
     });
   });
@@ -687,7 +427,7 @@ export async function createGatewayServer(
 
   registerGet("/threads/:threadId/timeline", async (request, reply) => {
     const threadId = (request.params as { threadId: string }).threadId;
-    const timeline = (await bridge.getTimeline(threadId)) ?? buildFallbackTimeline(store, threadId);
+    const timeline = await readModels.getTimeline(threadId);
     if (!timeline) {
       reply.code(404);
       return {
@@ -700,8 +440,7 @@ export async function createGatewayServer(
   registerGet("/threads/:threadId/skills", async (request, reply) => {
     try {
       const { threadId } = request.params as { threadId: string };
-      const thread =
-        (await bridge.getThread(threadId)) ?? fallbackThreadFromStore(store, threadId);
+      const thread = await readModels.getThread(threadId);
       if (!thread) {
         reply.code(404);
         return {
@@ -754,8 +493,7 @@ export async function createGatewayServer(
   registerPost("/threads/:threadId/attachments/images", async (request, reply) => {
     try {
       const { threadId } = request.params as { threadId: string };
-      const thread =
-        (await bridge.getThread(threadId)) ?? fallbackThreadFromStore(store, threadId);
+      const thread = await readModels.getThread(threadId);
       if (!thread) {
         reply.code(404);
         return {
@@ -789,11 +527,10 @@ export async function createGatewayServer(
   registerGet("/threads/:threadId/messages/latest", async (request, reply) => {
     const threadId = (request.params as { threadId: string }).threadId;
     const query = request.query as { limit?: string };
-    const transcript =
-      (await bridge.getTranscriptPage({
-        threadId,
-        limit: Number(query.limit ?? 20)
-      })) ?? buildFallbackTranscript(store, threadId, { limit: Number(query.limit ?? 20) });
+    const transcript = await readModels.getTranscriptPage({
+      threadId,
+      limit: Number(query.limit ?? 20)
+    });
     if (!transcript) {
       reply.code(404);
       return {
@@ -806,16 +543,11 @@ export async function createGatewayServer(
   registerGet("/threads/:threadId/messages", async (request, reply) => {
     const threadId = (request.params as { threadId: string }).threadId;
     const query = request.query as { cursor?: string; limit?: string };
-    const transcript =
-      (await bridge.getTranscriptPage({
-        threadId,
-        cursor: typeof query.cursor === "string" ? query.cursor : undefined,
-        limit: Number(query.limit ?? 20)
-      })) ??
-      buildFallbackTranscript(store, threadId, {
-        cursor: typeof query.cursor === "string" ? query.cursor : undefined,
-        limit: Number(query.limit ?? 20)
-      });
+    const transcript = await readModels.getTranscriptPage({
+      threadId,
+      cursor: typeof query.cursor === "string" ? query.cursor : undefined,
+      limit: Number(query.limit ?? 20)
+    });
     if (!transcript) {
       reply.code(404);
       return {
@@ -974,43 +706,15 @@ export async function createGatewayServer(
       await bridge.syncStore();
       const body = SharedRunRequestBodySchema.parse(request.body ?? {});
       const { threadId } = request.params as { threadId: string };
-      const codexThread =
-        (await bridge.getThread(threadId)) ?? fallbackThreadFromStore(store, threadId);
-      if (!codexThread) {
-        reply.code(404);
-        return {
-          error: "unknown_thread"
-        };
-      }
-
-      if (codexThread.archived) {
-        reply.code(409);
-        return {
-          error: "archived_thread"
-        };
-      }
-
-      const conflict = localThreadActionConflict(store, codexThread.thread_id);
-      if (conflict) {
-        reply.code(409);
-        return {
-          error: conflict
-        };
-      }
-
-      return await manager.startTurn({
-        actor_id: body.actor_id,
-        request_id: body.request_id,
-        prompt: body.prompt,
-        input_items: body.input_items,
-        collaboration_mode: body.collaboration_mode,
-        thread_id: codexThread.thread_id,
-        command_type: "turns.start"
+      return await runService.startTurn({
+        threadId,
+        body
       });
     } catch (error) {
-      reply.code(400);
+      const message = error instanceof Error ? error.message : String(error);
+      reply.code(routeErrorStatus(message));
       return {
-        error: error instanceof Error ? error.message : String(error)
+        error: message
       };
     }
   });
@@ -1065,14 +769,9 @@ export async function createGatewayServer(
         };
       }
 
-      return await manager.startTurn({
-        actor_id: body.actor_id,
-        request_id: body.request_id,
-        prompt: body.prompt,
-        input_items: body.input_items,
-        collaboration_mode: body.collaboration_mode,
-        thread_id: run.thread_id,
-        command_type: "turns.start"
+      return await runService.startTurn({
+        threadId: run.thread_id,
+        body
       });
     } catch (error) {
       reply.code(400);
@@ -1139,7 +838,7 @@ export async function createGatewayServer(
       }
 
       const updatedThread =
-        (thread && ((await bridge.getThread(thread.thread_id)) ?? fallbackThreadFromStore(store, thread.thread_id))) ||
+        (thread && (await readModels.getThread(thread.thread_id))) ||
         null;
       if (!updatedThread) {
         reply.code(404);
@@ -1178,7 +877,7 @@ export async function createGatewayServer(
         };
       }
 
-      const result = await manager.resolveApproval(command);
+      const result = await runService.resolveApproval(command);
       const response: ApprovalActionResponse = {
         deduplicated: false,
         approval: {
@@ -1214,7 +913,7 @@ export async function createGatewayServer(
         };
       }
 
-      const result = await manager.resolveApproval(command);
+      const result = await runService.resolveApproval(command);
       const response: ApprovalActionResponse = {
         deduplicated: false,
         approval: {
@@ -1250,7 +949,7 @@ export async function createGatewayServer(
         };
       }
 
-      const result = await manager.resolvePatch(command);
+      const result = await runService.resolvePatch(command);
       const response: PatchActionResponse = {
         deduplicated: false,
         patch: result.patch,
@@ -1283,7 +982,7 @@ export async function createGatewayServer(
         };
       }
 
-      const result = await manager.resolvePatch(command);
+      const result = await runService.resolvePatch(command);
       const response: PatchActionResponse = {
         deduplicated: false,
         patch: result.patch,
@@ -1317,7 +1016,7 @@ export async function createGatewayServer(
       }
 
       const response = RollbackPatchResponseSchema.parse(
-        await manager.rollbackPatch(command)
+        await runService.rollbackPatch(command)
       );
       store.saveCommandResult(dedupKey(command), response);
       return response;
@@ -1346,7 +1045,7 @@ export async function createGatewayServer(
         };
       }
 
-      const result = await manager.resolveNativeRequest(command);
+      const result = await runService.resolveNativeRequest(command);
       const response: NativeRequestActionResponse = {
         deduplicated: false,
         native_request: result.native_request,
@@ -1382,8 +1081,7 @@ export async function createGatewayServer(
         };
       }
 
-      const thread =
-        (await bridge.getThread(threadId)) ?? fallbackThreadFromStore(store, threadId);
+      const thread = await readModels.getThread(threadId);
       if (!thread) {
         reply.code(404);
         return {
@@ -1427,8 +1125,7 @@ export async function createGatewayServer(
       }
 
       const updatedThread =
-        (await bridge.getThread(thread.thread_id)) ??
-        fallbackThreadFromStore(store, thread.thread_id) ??
+        (await readModels.getThread(thread.thread_id)) ??
         ({
           ...thread,
           title: command.name
@@ -1463,8 +1160,7 @@ export async function createGatewayServer(
         };
       }
 
-      const thread =
-        (await bridge.getThread(threadId)) ?? fallbackThreadFromStore(store, threadId);
+      const thread = await readModels.getThread(threadId);
       if (!thread) {
         reply.code(404);
         return {
@@ -1472,7 +1168,7 @@ export async function createGatewayServer(
         };
       }
 
-      if (requiresMaterializedSharedThreadControl(thread)) {
+      if (requiresMaterializedThreadControl(thread)) {
         return sendThreadSyncPending(reply);
       }
 
@@ -1482,7 +1178,7 @@ export async function createGatewayServer(
       await bridge.syncThreadNow(thread.thread_id);
 
       const updatedThread =
-        (await bridge.getThread(thread.thread_id)) ??
+        (await readModels.getThread(thread.thread_id)) ??
         ({
           ...thread,
           archived: true,
@@ -1518,8 +1214,7 @@ export async function createGatewayServer(
         };
       }
 
-      const thread =
-        (await bridge.getThread(threadId)) ?? fallbackThreadFromStore(store, threadId);
+      const thread = await readModels.getThread(threadId);
       if (!thread) {
         reply.code(404);
         return {
@@ -1527,7 +1222,7 @@ export async function createGatewayServer(
         };
       }
 
-      if (requiresMaterializedSharedThreadControl(thread)) {
+      if (requiresMaterializedThreadControl(thread)) {
         return sendThreadSyncPending(reply);
       }
 
@@ -1537,7 +1232,7 @@ export async function createGatewayServer(
       await bridge.syncThreadNow(thread.thread_id);
 
       const updatedThread =
-        (await bridge.getThread(thread.thread_id)) ??
+        (await readModels.getThread(thread.thread_id)) ??
         ({
           ...thread,
           archived: false,
@@ -1573,8 +1268,7 @@ export async function createGatewayServer(
         };
       }
 
-      const thread =
-        (await bridge.getThread(threadId)) ?? fallbackThreadFromStore(store, threadId);
+      const thread = await readModels.getThread(threadId);
       if (!thread) {
         reply.code(404);
         return {
@@ -1582,7 +1276,7 @@ export async function createGatewayServer(
         };
       }
 
-      if (requiresMaterializedSharedThreadControl(thread)) {
+      if (requiresMaterializedThreadControl(thread)) {
         return sendThreadSyncPending(reply);
       }
 
@@ -1591,7 +1285,7 @@ export async function createGatewayServer(
       });
       await bridge.syncThreadNow(thread.thread_id);
 
-      const updatedThread = (await bridge.getThread(thread.thread_id)) ?? thread;
+      const updatedThread = (await readModels.getThread(thread.thread_id)) ?? thread;
       const response: CodexThreadActionResponse = {
         deduplicated: false,
         thread: updatedThread
@@ -1627,8 +1321,7 @@ export async function createGatewayServer(
         };
       }
 
-      const thread =
-        (await bridge.getThread(threadId)) ?? fallbackThreadFromStore(store, threadId);
+      const thread = await readModels.getThread(threadId);
       if (!thread) {
         reply.code(404);
         return {
@@ -1636,7 +1329,7 @@ export async function createGatewayServer(
         };
       }
 
-      if (requiresMaterializedSharedThreadControl(thread)) {
+      if (requiresMaterializedThreadControl(thread)) {
         return sendThreadSyncPending(reply);
       }
 
@@ -1646,7 +1339,7 @@ export async function createGatewayServer(
       let forkedThread: CodexThread | null = null;
       try {
         await bridge.syncThreadNow(forked.thread_id);
-        forkedThread = (await bridge.getThread(forked.thread_id)) ?? null;
+        forkedThread = (await readModels.getThread(forked.thread_id)) ?? null;
       } catch {
         forkedThread = null;
       }
@@ -1699,8 +1392,7 @@ export async function createGatewayServer(
         };
       }
 
-      const thread =
-        (await bridge.getThread(threadId)) ?? fallbackThreadFromStore(store, threadId);
+      const thread = await readModels.getThread(threadId);
       if (!thread) {
         reply.code(404);
         return {
@@ -1708,7 +1400,7 @@ export async function createGatewayServer(
         };
       }
 
-      if (requiresMaterializedSharedThreadControl(thread)) {
+      if (requiresMaterializedThreadControl(thread)) {
         return sendThreadSyncPending(reply);
       }
 
@@ -1718,7 +1410,7 @@ export async function createGatewayServer(
       });
       await bridge.syncThreadNow(thread.thread_id);
 
-      const updatedThread = (await bridge.getThread(thread.thread_id)) ?? thread;
+      const updatedThread = (await readModels.getThread(thread.thread_id)) ?? thread;
       const response: CodexThreadActionResponse = {
         deduplicated: false,
         thread: updatedThread
@@ -1749,8 +1441,7 @@ export async function createGatewayServer(
         };
       }
 
-      const thread =
-        (await bridge.getThread(threadId)) ?? fallbackThreadFromStore(store, threadId);
+      const thread = await readModels.getThread(threadId);
       if (!thread) {
         reply.code(404);
         return {
@@ -1758,7 +1449,7 @@ export async function createGatewayServer(
         };
       }
 
-      if (requiresMaterializedSharedThreadControl(thread)) {
+      if (requiresMaterializedThreadControl(thread)) {
         return sendThreadSyncPending(reply);
       }
 

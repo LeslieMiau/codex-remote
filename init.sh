@@ -35,6 +35,41 @@ read_gateway_runtime() {
   '
 }
 
+read_web_runtime() {
+  local overview
+  overview="$(curl -fsS http://127.0.0.1:3000/api/overview 2>/dev/null || true)"
+  if [ -z "$overview" ]; then
+    return 1
+  fi
+
+  printf '%s' "$overview" | node -e '
+    let data = "";
+    process.stdin.on("data", (chunk) => {
+      data += chunk;
+    });
+    process.stdin.on("end", () => {
+      try {
+        const json = JSON.parse(data);
+        const capabilities = json.capabilities ?? {};
+        const shared = capabilities.shared_state_available === true ? "true" : "false";
+        const codexHome =
+          typeof capabilities.codex_home === "string" ? capabilities.codex_home : "";
+        const expected = process.env.EXPECTED_CODEX_HOME ?? "";
+        const hasThreads = Array.isArray(json.threads) ? "true" : "false";
+        const ok =
+          shared === "true" &&
+          hasThreads === "true" &&
+          (!expected || codexHome === expected)
+            ? "true"
+            : "false";
+        process.stdout.write([ok, shared, codexHome, hasThreads].join("|"));
+      } catch {
+        process.exit(1);
+      }
+    });
+  '
+}
+
 echo "=== 1. 环境 ==="
 if [ ! -d node_modules ]; then
   echo "安装 pnpm 依赖..."
@@ -89,9 +124,31 @@ else
 fi
 
 WEB_HTTP_CODE="$(curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1:3000 2>/dev/null || echo "000")"
-if [ "$WEB_HTTP_CODE" = "200" ] || [ "$WEB_HTTP_CODE" = "307" ] || [ "$WEB_HTTP_CODE" = "308" ]; then
+WEB_RUNTIME_STATUS="$(EXPECTED_CODEX_HOME="$EXPECTED_CODEX_HOME" read_web_runtime || true)"
+WEB_RUNTIME_OK="false"
+WEB_SHARED_STATE="unknown"
+WEB_RUNTIME_HOME=""
+WEB_HAS_THREADS="false"
+if [ -n "$WEB_RUNTIME_STATUS" ]; then
+  IFS='|' read -r WEB_RUNTIME_OK WEB_SHARED_STATE WEB_RUNTIME_HOME WEB_HAS_THREADS <<EOF
+$WEB_RUNTIME_STATUS
+EOF
+fi
+
+if \
+  { [ "$WEB_HTTP_CODE" = "200" ] || [ "$WEB_HTTP_CODE" = "307" ] || [ "$WEB_HTTP_CODE" = "308" ]; } &&
+  [ "$WEB_RUNTIME_OK" = "true" ]
+then
   echo "Mobile Web 已运行。"
 else
+  if [ "$WEB_HTTP_CODE" = "200" ] || [ "$WEB_HTTP_CODE" = "307" ] || [ "$WEB_HTTP_CODE" = "308" ]; then
+    echo "检测到现有 Mobile Web 处于陈旧或降级态（shared_state=${WEB_SHARED_STATE}, codex_home=${WEB_RUNTIME_HOME:-unknown}, threads=${WEB_HAS_THREADS}），准备重启。"
+    EXISTING_WEB_PID="$(lsof -tiTCP:3000 -sTCP:LISTEN 2>/dev/null | head -n 1 || true)"
+    if [ -n "$EXISTING_WEB_PID" ]; then
+      kill "$EXISTING_WEB_PID" 2>/dev/null || true
+      sleep 2
+    fi
+  fi
   echo "启动 Mobile Web..."
   nohup ./scripts/start-mobile-web.sh > output/harness-web.log 2>&1 &
   sleep 8
@@ -116,10 +173,23 @@ else
 fi
 
 WEB_HTTP_CODE="$(curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1:3000 2>/dev/null || echo "000")"
-if [ "$WEB_HTTP_CODE" = "200" ] || [ "$WEB_HTTP_CODE" = "307" ] || [ "$WEB_HTTP_CODE" = "308" ]; then
-  echo "✅ Mobile Web 入口可访问 ($WEB_HTTP_CODE)"
+WEB_RUNTIME_STATUS="$(EXPECTED_CODEX_HOME="$EXPECTED_CODEX_HOME" read_web_runtime || true)"
+WEB_RUNTIME_OK="false"
+WEB_SHARED_STATE="unknown"
+WEB_RUNTIME_HOME=""
+WEB_HAS_THREADS="false"
+if [ -n "$WEB_RUNTIME_STATUS" ]; then
+  IFS='|' read -r WEB_RUNTIME_OK WEB_SHARED_STATE WEB_RUNTIME_HOME WEB_HAS_THREADS <<EOF
+$WEB_RUNTIME_STATUS
+EOF
+fi
+if \
+  { [ "$WEB_HTTP_CODE" = "200" ] || [ "$WEB_HTTP_CODE" = "307" ] || [ "$WEB_HTTP_CODE" = "308" ]; } &&
+  [ "$WEB_RUNTIME_OK" = "true" ]
+then
+  echo "✅ Mobile Web 入口可访问 ($WEB_HTTP_CODE)，overview API 正常"
 else
-  echo "⚠️  Mobile Web 返回 $WEB_HTTP_CODE"
+  echo "⚠️  Mobile Web 运行态异常（http=${WEB_HTTP_CODE}，shared_state=${WEB_SHARED_STATE}，codex_home=${WEB_RUNTIME_HOME:-unknown}，threads=${WEB_HAS_THREADS}）"
   ERRORS=$((ERRORS + 1))
 fi
 

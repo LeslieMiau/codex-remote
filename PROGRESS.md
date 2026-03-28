@@ -98,3 +98,11 @@
 - 同时修复 harness 自检误报：测试阶段改为使用临时 `CODEX_HOME` 跑 `corepack pnpm test`，避免与正在使用 `~/.codex/state_5.sqlite` 的真实 gateway 争锁导致 `database is locked`。
 - 验证通过：`bash init.sh` 现已在当前环境完整通过并以 `errors: 0` 结束；`curl -sS http://127.0.0.1:8787/api/overview` 与 `curl -sS http://127.0.0.1:3000/api/overview` 均显示 `thread_count=133`、`shared_state_available=true`；`HEAD /queue` 返回 `200`。
 - 说明：这次是运行环境修复，不单独标记 PLAN feature 完成；Feature #11 仍保留为未完成，因为“列表 -> 线程 -> 详情/附件入口”的浏览器态验收还需要能启动 Playwright Chromium 的宿主环境。
+
+## Session — 2026-03-28 22:53
+- 按上一轮 review 的优先级继续修复常驻启动链路：`scripts/start-gateway.sh` 不再把 `tsup --watch --onSuccess "node dist/cli.js"` 当成长期服务入口，而是改成稳定的 `build -> start`；这样启动后留下的是实际的 `node dist/cli.js` listener，而不是只剩 `tsup/esbuild` 父进程。
+- `scripts/start-mobile-web.sh` 也改成显式 `clean` 后直接执行 `next dev --hostname 127.0.0.1 --port 3000`，避免通过 `pnpm run dev` 传参时落到错误的目录解析或静默漂移到别的端口。
+- `init.sh` 新增 `read_web_runtime()`，现在除了首页 HTTP 状态，还会校验 `http://127.0.0.1:3000/api/overview` 是否真能返回 overview JSON、shared state 是否可用、`codex_home` 是否匹配期望目录；如果 3000 上是陈旧/降级实例，会先杀掉监听进程再拉起新的 mobile-web。
+- 宿主级验证通过：`bash init.sh` 在 host context 下以 `errors: 0` 结束；单独用 PTY 会话执行 `./scripts/start-gateway.sh` 与 `./scripts/start-mobile-web.sh` 后，`http://127.0.0.1:8787/api/overview` 与 `http://127.0.0.1:3000/api/overview` 均返回 `thread_count=133`、`shared_state_available=true`、`codex_home=/Users/miau/.codex`；`HEAD /projects` 与 `HEAD /queue` 均返回 `200`。
+- smoke 回归通过：`MOBILE_WEB_SMOKE_SKIP_BROWSER=1 corepack pnpm --filter @codex-remote/mobile-web verify:smoke` 再次通过，说明路由与 compact HTML marker 没被本轮启动链路修改破坏。
+- 说明：这轮仍然是运行态基础设施修复，不额外修改 PLAN；Feature #11 继续保留未完成，因为“真实浏览器里从列表进入线程、打开详情/附件入口”的最终手机端验收仍受当前宿主 Chromium 权限限制。

@@ -127,6 +127,28 @@ describe("chat timeline component", () => {
     expect(markup).toContain("No messages yet in this chat.");
   });
 
+  it("renders a degraded empty-state message when the workspace provides one", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ChatTimeline, {
+        emptyMessage: "Shared chat state is degraded right now.",
+        hasMoreRemoteHistory: false,
+        hiddenItemCount: 0,
+        isLoading: false,
+        isLoadingOlder: false,
+        locale: "en",
+        onDismissPendingSend() {},
+        onEditPendingSend() {},
+        onOpenPatchReview() {},
+        onRetryPendingSend() {},
+        pendingApprovalsById: new Map(),
+        timelineItems: []
+      })
+    );
+
+    expect(markup).toContain("Shared chat state is degraded right now.");
+    expect(markup).not.toContain("No messages yet in this chat.");
+  });
+
   it("renders system actions as lightweight review notices", () => {
     const markup = renderToStaticMarkup(
       createElement(ChatTimeline, {

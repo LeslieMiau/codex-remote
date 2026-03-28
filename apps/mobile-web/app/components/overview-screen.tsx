@@ -43,6 +43,7 @@ import {
 } from "../lib/chat-thread-presentation";
 import { ChatsHomeShell } from "./chats-home-shell";
 import { NewThreadSheet } from "./new-thread-sheet";
+import { buildOverviewEmptyStateCopy } from "./shared-empty-state-presentation";
 import styles from "./overview-screen.module.css";
 
 const POLL_INTERVAL_MS = 2_000;
@@ -246,6 +247,16 @@ export function OverviewScreen() {
   }, [actionableQueue]);
   const capabilities = overview?.capabilities;
   const hasThreadSearch = threadQuery.trim().length > 0;
+  const overviewEmptyState = useMemo(
+    () =>
+      buildOverviewEmptyStateCopy({
+        hasThreadSearch,
+        isFallbackOnlyOverview,
+        locale,
+        reason: overview?.capabilities.reason
+      }),
+    [hasThreadSearch, isFallbackOnlyOverview, locale, overview?.capabilities.reason]
+  );
 
   async function handleCreateThread(input: { prompt: string; repoRoot: string }) {
     setIsCreatingThread(true);
@@ -502,55 +513,9 @@ export function OverviewScreen() {
             </div>
           ) : (
             <section className={styles.emptyState}>
-              <p>
-                {hasThreadSearch
-                  ? localize(locale, {
-                      zh: "没有找到匹配聊天。",
-                      en: "No matching chats."
-                    })
-                  : isFallbackOnlyOverview
-                    ? overview?.capabilities.reason ??
-                      localize(locale, {
-                        zh: "共享聊天状态暂时不可用。",
-                        en: "Shared chat state is temporarily unavailable."
-                      })
-                    : localize(locale, {
-                        zh: "还没有可显示的聊天。",
-                        en: "There are no visible chats yet."
-                      })}
-              </p>
-              <h2>
-                {hasThreadSearch
-                  ? localize(locale, {
-                      zh: "换个关键词再试试。",
-                      en: "Try a different keyword."
-                    })
-                  : isFallbackOnlyOverview
-                    ? localize(locale, {
-                        zh: "恢复后，这里会自动显示可同步的真实会话。",
-                        en: "Once recovery completes, synchronized chats will appear here automatically."
-                      })
-                  : localize(locale, {
-                      zh: "从这里开始第一条对话。",
-                      en: "Start the first conversation from here."
-                    })}
-              </h2>
-              <p>
-                {hasThreadSearch
-                  ? localize(locale, {
-                      zh: "可以继续按标题、项目名或仓库路径搜索。",
-                      en: "Search by title, project name, or repo path."
-                    })
-                  : isFallbackOnlyOverview
-                    ? localize(locale, {
-                        zh: "当前只保留退化模式下的恢复数据，恢复线程默认不会显示在主列表中。",
-                        en: "Only degraded recovery data is available, and recovery threads stay hidden from the main list by default."
-                      })
-                  : localize(locale, {
-                      zh: "新聊天会直接进入共享会话。",
-                      en: "New chats open the shared conversation directly."
-                    })}
-              </p>
+              <p>{overviewEmptyState.body}</p>
+              <h2>{overviewEmptyState.title}</h2>
+              <p>{overviewEmptyState.detail}</p>
               <div className={styles.emptyActions}>
                 {capabilities?.shared_thread_create ? (
                   <button

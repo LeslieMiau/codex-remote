@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { GatewayStore } from "../lib/store";
 import { nowIso } from "../lib/time";
+import { GatewayFallbackProjection } from "../projections/fallback-thread-projection";
+import { createGatewayRepositories } from "../repositories/gateway-repositories";
 import { GatewayReadModelService } from "./read-model-service";
 
 let store: GatewayStore | null = null;
@@ -13,7 +15,9 @@ afterEach(() => {
 
 async function createService() {
   store = await GatewayStore.open(":memory:");
-  return new GatewayReadModelService(store, {
+  const repositories = createGatewayRepositories(store);
+  const fallbackProjection = new GatewayFallbackProjection(repositories);
+  return new GatewayReadModelService(repositories, {
     async getOverview() {
       return {
         projects: [],
@@ -55,7 +59,7 @@ async function createService() {
     async getTranscriptPage() {
       return null;
     }
-  });
+  }, fallbackProjection);
 }
 
 describe("GatewayReadModelService", () => {

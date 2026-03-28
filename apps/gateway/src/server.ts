@@ -58,6 +58,8 @@ import { GatewayStore } from "./lib/store";
 import { evaluateTailscaleAccess, type TailscaleAuthConfig } from "./lib/tailscale-auth";
 import { nowIso } from "./lib/time";
 import { createUlid } from "./lib/ulid";
+import { GatewayFallbackProjection } from "./projections/fallback-thread-projection";
+import { createGatewayRepositories } from "./repositories/gateway-repositories";
 import { GatewayReadModelService } from "./services/read-model-service";
 import { GatewayRunService } from "./services/run-service";
 import {
@@ -215,6 +217,14 @@ function sendForbidden(
 }
 
 function routeErrorStatus(message: string) {
+  if (message.startsWith("patch_apply_conflict:")) {
+    return 409;
+  }
+
+  if (message.startsWith("patch_apply_invalid:")) {
+    return 400;
+  }
+
   if (
     message === "unknown_approval" ||
     message === "unknown_patch" ||
@@ -302,8 +312,10 @@ export async function createGatewayServer(
     isTurnActive: (turnId) => manager.hasActiveExecution(turnId)
   });
   await bridge.start();
-  const readModels = new GatewayReadModelService(store, bridge);
-  const runService = new GatewayRunService(store, readModels, manager);
+  const repositories = createGatewayRepositories(store);
+  const fallbackProjection = new GatewayFallbackProjection(repositories);
+  const readModels = new GatewayReadModelService(repositories, bridge, fallbackProjection);
+  const runService = new GatewayRunService(repositories, readModels, manager);
 
   const tailscaleAuth = options.tailscaleAuth ?? {
     mode: "off" as const,

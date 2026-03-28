@@ -42,7 +42,6 @@ import {
   GatewayRequestError,
   followUpRun,
   getCodexCapabilities,
-  getCodexOverview,
   getCodexMessagesLatest,
   getCodexMessagesPage,
   getCodexSharedSettings,
@@ -101,13 +100,21 @@ import {
   type PendingSendSkill,
   type PendingSendState
 } from "../lib/pending-send";
-import {
-  getStoredThreadListRoute,
-  type ThreadListRoute
-} from "../lib/thread-list-route-storage";
 import { setStoredLastActiveThread } from "../lib/thread-storage";
+import { isRecoveryFallbackThread } from "../lib/chat-thread-presentation";
 import { DetailShell } from "./detail-shell";
 import { MobileSheet } from "./mobile-sheet";
+import {
+  buildRecentChatsSheetCopy,
+  describeThreadTimelineEmptyMessage
+} from "./shared-empty-state-presentation";
+import { buildNativeUserInputResponsePayload } from "./shared-thread-request-sheet-controller";
+import { useSharedThreadSwitcherController } from "./shared-thread-switcher-controller";
+import {
+  buildSharedThreadWorkspaceScreenModel,
+  parseNativeRequestQuestions,
+  type NativeRequestQuestion
+} from "./shared-thread-workspace-screen-model";
 
 interface SharedThreadWorkspaceProps {
   threadId: string;
@@ -125,18 +132,6 @@ type ConfirmState =
   | null;
 
 type PendingSend = PendingSendState;
-
-interface NativeRequestQuestionOption {
-  description?: string;
-  label: string;
-  value: string;
-}
-
-interface NativeRequestQuestion {
-  id: string;
-  options: NativeRequestQuestionOption[];
-  question: string;
-}
 
 interface LiveActivity {
   detail: string;
@@ -160,84 +155,6 @@ function translateNativeRequestKind(
     default:
       return localize(locale, { zh: "补充输入", en: "Extra input" });
   }
-}
-
-function parseNativeRequestQuestions(request: NativeRequestRecord | null | undefined) {
-  if (!request?.payload || typeof request.payload !== "object") {
-    return [];
-  }
-
-  const rawQuestions = Array.isArray((request.payload as { questions?: unknown[] }).questions)
-    ? ((request.payload as { questions: unknown[] }).questions ?? [])
-    : [];
-
-  const questions: NativeRequestQuestion[] = [];
-
-  for (const candidate of rawQuestions) {
-    if (!candidate || typeof candidate !== "object") {
-      continue;
-    }
-
-    const record = candidate as Record<string, unknown>;
-    const id = typeof record.id === "string" ? record.id : "";
-    const question = typeof record.question === "string" ? record.question : "";
-    if (!id || !question) {
-      continue;
-    }
-
-    const options: NativeRequestQuestionOption[] = [];
-    if (Array.isArray(record.options)) {
-      for (const option of record.options) {
-        if (!option || typeof option !== "object") {
-          continue;
-        }
-
-        const optionRecord = option as Record<string, unknown>;
-        const label =
-          typeof optionRecord.label === "string"
-            ? optionRecord.label
-            : typeof optionRecord.value === "string"
-              ? optionRecord.value
-              : "";
-        if (!label) {
-          continue;
-        }
-
-        options.push({
-          label,
-          value: typeof optionRecord.value === "string" ? optionRecord.value : label,
-          description:
-            typeof optionRecord.description === "string"
-              ? optionRecord.description
-              : undefined
-        });
-      }
-    }
-
-    questions.push({
-      id,
-      question,
-      options
-    });
-  }
-
-  return questions;
-}
-
-function buildUserInputResponsePayload(
-  questions: NativeRequestQuestion[],
-  answers: Record<string, string>
-) {
-  const nextAnswers: Record<string, { answers: string[] }> = {};
-  for (const question of questions) {
-    nextAnswers[question.id] = {
-      answers: [answers[question.id] ?? ""]
-    };
-  }
-
-  return {
-    answers: nextAnswers
-  };
 }
 
 function buildSelectedInputItems(
@@ -281,14 +198,6 @@ function formatTimestamp(locale: "zh" | "en", value?: string) {
     return locale === "zh" ? "刚刚" : "Just now";
   }
   return formatDateTime(locale, value);
-}
-
-function capabilityMessage(
-  locale: "zh" | "en",
-  capabilities: CodexCapabilitiesResponse | null,
-  fallback: { zh: string; en: string }
-) {
-  return capabilities?.reason ?? localize(locale, fallback);
 }
 
 function translateSyncState(
@@ -756,6 +665,7 @@ function describeActionError(locale: "zh" | "en", error: unknown) {
 export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) {
   const router = useRouter();
   const { locale } = useLocale();
+  const recentChatsSheetCopy = useMemo(() => buildRecentChatsSheetCopy(locale), [locale]);
   const isZh = locale === "zh";
   const [transcript, setTranscript] = useState<CodexTranscriptPageResponse | null>(() =>
     getCachedTranscript(threadId)
@@ -798,11 +708,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
   const [threadTitleDraft, setThreadTitleDraft] = useState("");
   const [rollbackTurnsDraft, setRollbackTurnsDraft] = useState("1");
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
-  const [switcherThreads, setSwitcherThreads] = useState<CodexThread[]>([]);
-  const [isLoadingThreads, setIsLoadingThreads] = useState(false);
-  const [threadSwitcherError, setThreadSwitcherError] = useState<string | null>(null);
   const [composerReserve, setComposerReserve] = useState(220);
-  const [returnToListHref, setReturnToListHref] = useState<ThreadListRoute>("/projects");
   const inFlightRef = useRef(false);
   const timelineBottomRef = useRef<HTMLDivElement | null>(null);
   const refreshTimerRef = useRef<number | null>(null);
@@ -823,10 +729,6 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
 
   useEffect(() => {
     setStoredLastActiveThread(threadId);
-  }, [threadId]);
-
-  useEffect(() => {
-    setReturnToListHref(getStoredThreadListRoute());
   }, [threadId]);
 
   useEffect(() => {
@@ -860,7 +762,6 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
     setThreadTitleDraft(cachedTranscript?.thread.title ?? "");
     setRollbackTurnsDraft("1");
     setLightboxImageUrl(null);
-    setThreadSwitcherError(null);
     lastSeenSeqRef.current = cachedTranscript?.thread.last_stream_seq ?? 0;
     transcriptRef.current = cachedTranscript;
     previousSyncStateRef.current = cachedTranscript?.thread.sync_state;
@@ -1073,84 +974,65 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
       setToastMessage(flashMessage);
     }
   }, [threadId]);
+  const {
+    isLoadingThreads,
+    loadThreads: loadThreadSwitcher,
+    returnToListHref,
+    selectThread,
+    switcherThreads,
+    threadSwitcherError
+  } = useSharedThreadSwitcherController({
+    locale,
+    onSelectThread(nextThreadId) {
+      setMobilePanel(null);
+      router.push(buildThreadPath(nextThreadId));
+    },
+    threadId
+  });
 
-  const pendingApprovals = useMemo(
-    () => transcript?.approvals.filter((approval) => approval.status === "requested") ?? [],
-    [transcript]
-  );
-  const pendingNativeRequests = useMemo(
-    () => transcript?.native_requests.filter((request) => request.status === "requested") ?? [],
-    [transcript]
-  );
-  const pendingPatches = useMemo(
+  const baseScreenModel = useMemo(
     () =>
-      transcript?.patches.filter(
-        (patch) => patch.status !== "applied" && patch.status !== "discarded"
-      ) ?? [],
-    [transcript]
+      buildSharedThreadWorkspaceScreenModel({
+        capabilities,
+        error,
+        isMutating,
+        locale,
+        returnToListHref,
+        selectedImages,
+        sharedSettings,
+        transcript
+      }),
+    [
+      capabilities,
+      error,
+      isMutating,
+      locale,
+      returnToListHref,
+      selectedImages,
+      sharedSettings,
+      transcript
+    ]
   );
-  const activeRunId = transcript?.thread.active_turn_id ?? null;
-  const pendingApprovalsById = useMemo(
-    () => new Map(pendingApprovals.map((approval) => [approval.approval_id, approval])),
-    [pendingApprovals]
-  );
-  const leadNativeRequest = pendingNativeRequests[0] ?? null;
-  const nativeRequestQuestions = useMemo(
-    () => parseNativeRequestQuestions(leadNativeRequest),
-    [leadNativeRequest]
-  );
-  const isRunActive =
-    Boolean(activeRunId) &&
-    (transcript?.thread.state === "running" ||
-      transcript?.thread.state === "waiting_approval" ||
-      transcript?.thread.state === "waiting_input");
-  const composerDisabledReason = !transcript
-    ? localize(locale, {
-        zh: "正在加载聊天状态。",
-        en: "Loading chat state."
-      })
-    : transcript.thread.archived
-      ? localize(locale, {
-          zh: "这条已归档聊天当前为只读状态。",
-          en: "Archived chats are read-only."
-        })
-        : !capabilities?.run_start
-        ? capabilityMessage(locale, capabilities, {
-            zh: "当前 Codex 版本不支持在手机端发起共享运行。",
-            en: "This Codex build cannot start shared runs from the phone."
-          })
-        : pendingNativeRequests.length > 0
-          ? localize(locale, {
-              zh: "先处理补充输入请求，再继续发新消息。",
-              en: "Resolve the input request before sending a new message."
-            })
-        : pendingApprovals.length > 0
-          ? localize(locale, {
-              zh: "先处理批准请求，再继续发新消息。",
-              en: "Resolve the approval request before sending a new message."
-            })
-          : pendingPatches.length > 0
-            ? localize(locale, {
-                zh: "先完成变更审查，再继续发新消息。",
-                en: "Review the pending change before sending a new message."
-              })
-        : selectedImages.some((image) => image.status === "uploading")
-          ? localize(locale, {
-              zh: "图片上传完成后才能继续发送。",
-              en: "Wait for image uploads to finish before sending."
-            })
-        : selectedImages.some((image) => image.status === "failed")
-          ? localize(locale, {
-              zh: "请移除上传失败的图片，或重新选择后再发送。",
-              en: "Remove the failed image upload or try again before sending."
-            })
-        : isRunActive && !capabilities.live_follow_up
-          ? localize(locale, {
-              zh: "当前 Codex 版本暂不支持运行中追加指令。",
-              en: "Live follow-up unavailable on this Codex build."
-            })
-          : null;
-  const composerInputDisabled = !transcript || transcript.thread.archived || isMutating;
+  const {
+    activeRunId,
+    composerDisabledReason,
+    composerInputDisabled,
+    displayThreadTitle,
+    hasImageCapability,
+    hasSkillCapability,
+    isRunActive,
+    leadApproval,
+    leadNativeRequest,
+    leadPatch,
+    nativeRequestQuestions,
+    pendingApprovals,
+    pendingApprovalsById,
+    pendingNativeRequests,
+    pendingPatches,
+    remoteThreadActionsBlocked,
+    returnToListLabel,
+    selectedModelLabel
+  } = baseScreenModel;
 
   const liveResponse = liveState;
   const liveDraftMessage = useMemo(
@@ -1187,21 +1069,6 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
   );
   const liveActivity = deriveLiveActivity(locale, transcript, transportState, eventActivity);
   const syncStateLabel = translateSyncState(locale, transcript?.thread.sync_state);
-  const remoteThreadActionsBlocked = Boolean(
-    transcript &&
-      (!transcript.thread.adapter_thread_ref || transcript.thread.sync_state === "sync_pending")
-  );
-  const returnToListLabel =
-    returnToListHref === "/queue"
-      ? localize(locale, { zh: "返回收件箱", en: "Back to inbox" })
-      : localize(locale, { zh: "打开聊天列表", en: "Open chats" });
-  const selectedModelLabel =
-    sharedSettings?.available_models.find((option) => option.slug === sharedSettings.model)
-      ?.display_name ?? sharedSettings?.model ?? null;
-  const hasImageCapability = Boolean(capabilities?.supports_images && capabilities?.image_inputs);
-  const hasSkillCapability = Boolean(capabilities?.skills_input);
-  const leadApproval = pendingApprovals[0] ?? null;
-  const leadPatch = pendingPatches[0] ?? null;
   const headerSubtitle = error
     ? localize(locale, {
         zh: "有一项状态需要处理",
@@ -1518,28 +1385,11 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
 
   async function openThreadSwitcher() {
     setMobilePanel("threads");
-    setThreadSwitcherError(null);
-    setIsLoadingThreads(true);
-    try {
-      const overview = await getCodexOverview({
-        includeArchived: true
-      });
-      setSwitcherThreads(
-        [...overview.threads].sort((left, right) =>
-          right.updated_at.localeCompare(left.updated_at)
-        )
-      );
-    } catch (loadError) {
-      setThreadSwitcherError(describeActionError(locale, loadError));
-    } finally {
-      setIsLoadingThreads(false);
-    }
+    await loadThreadSwitcher();
   }
 
   function handleThreadSelect(nextThreadId: string) {
-    setStoredLastActiveThread(nextThreadId);
-    setMobilePanel(null);
-    router.push(buildThreadPath(nextThreadId));
+    selectThread(nextThreadId);
   }
 
   async function loadOlderMessages() {
@@ -1803,7 +1653,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
 
     const responsePayload =
       action === "respond" && leadNativeRequest.kind === "user_input"
-        ? buildUserInputResponsePayload(nativeRequestQuestions, nativeRequestAnswers)
+        ? buildNativeUserInputResponsePayload(nativeRequestQuestions, nativeRequestAnswers)
         : undefined;
 
     await runMutation(async () => {
@@ -2036,7 +1886,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
       eyebrow={transcript?.thread.project_label ?? (isZh ? "聊天" : "Chat")}
       className="codex-detail-shell--chat"
       subtitle={headerSubtitle}
-      title={transcript?.thread.title ?? threadId}
+      title={displayThreadTitle}
     >
       <div
         className="codex-thread-screen"
@@ -2310,12 +2160,9 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
 
                 {!isLoading && displayMessages.length === 0 ? (
                   <div className="codex-empty-panel">
-                    <p>
-                      {localize(locale, {
-                        zh: "这条聊天里还没有消息。",
-                        en: "No messages yet in this chat."
-                      })}
-                    </p>
+                    <p>{describeThreadTimelineEmptyMessage(locale, {
+                      degraded: isRecoveryFallbackThread(transcript?.thread)
+                    })}</p>
                   </div>
                 ) : null}
                 <div ref={timelineBottomRef} />
@@ -2337,8 +2184,8 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
         {threadSwitcherError ? (
           <section aria-live="assertive" className="codex-status-strip codex-status-strip--stacked tone-danger" role="alert">
             <div className="codex-status-strip__copy">
-              <p className="section-label">{localize(locale, { zh: "对话列表异常", en: "Chat list issue" })}</p>
-              <strong>{localize(locale, { zh: "最近对话暂时不可用", en: "Recent chats are temporarily unavailable" })}</strong>
+              <p className="section-label">{recentChatsSheetCopy.issueLabel}</p>
+              <strong>{recentChatsSheetCopy.unavailableTitle}</strong>
               <p>{threadSwitcherError}</p>
             </div>
           </section>
@@ -2346,11 +2193,11 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
         <div className="thread-list">
           {isLoadingThreads ? (
             <p className="codex-side-empty">
-              {localize(locale, { zh: "正在加载最近对话。", en: "Loading recent chats." })}
+              {recentChatsSheetCopy.loading}
             </p>
           ) : switcherThreads.length === 0 ? (
             <p className="codex-side-empty">
-              {localize(locale, { zh: "当前还没有别的对话。", en: "No other chats yet." })}
+              {recentChatsSheetCopy.empty}
             </p>
           ) : (
             switcherThreads.map((thread) => (

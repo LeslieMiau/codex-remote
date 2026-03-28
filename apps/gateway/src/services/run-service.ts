@@ -9,32 +9,35 @@ import type {
   StartTurnResponse
 } from "@codex-remote/protocol";
 
-import { GatewayStore } from "../lib/store";
+import type { GatewayRepositories } from "../repositories/gateway-repositories";
 import type { ThreadRuntimeManager } from "../runtime/thread-runtime-manager";
 import { GatewayReadModelService } from "./read-model-service";
 
-function localThreadActionConflict(store: GatewayStore, threadId: string) {
-  const thread = store.getThread(threadId);
+function localThreadActionConflict(
+  repositories: GatewayRepositories,
+  threadId: string
+) {
+  const thread = repositories.threads.get(threadId);
   if (!thread) {
     return null;
   }
 
-  const pendingApprovals = store
-    .listApprovals(threadId)
+  const pendingApprovals = repositories.approvals
+    .listByThread(threadId)
     .filter((approval) => approval.status === "requested").length;
   if (pendingApprovals > 0) {
     return "approval_required";
   }
 
-  const pendingNativeRequests = store
-    .listNativeRequests(threadId)
+  const pendingNativeRequests = repositories.nativeRequests
+    .listByThread(threadId)
     .filter((nativeRequest) => nativeRequest.status === "requested").length;
   if (pendingNativeRequests > 0) {
     return "input_required";
   }
 
-  const pendingPatches = store
-    .listPatches(threadId)
+  const pendingPatches = repositories.patches
+    .listByThread(threadId)
     .filter((patch) => patch.status !== "applied" && patch.status !== "discarded").length;
   if (pendingPatches > 0) {
     return "patch_review_required";
@@ -52,7 +55,7 @@ function localThreadActionConflict(store: GatewayStore, threadId: string) {
 
 export class GatewayRunService {
   constructor(
-    private readonly store: GatewayStore,
+    private readonly repositories: GatewayRepositories,
     private readonly readModels: GatewayReadModelService,
     private readonly manager: ThreadRuntimeManager
   ) {}
@@ -70,7 +73,7 @@ export class GatewayRunService {
       throw new Error("archived_thread");
     }
 
-    const conflict = localThreadActionConflict(this.store, codexThread.thread_id);
+    const conflict = localThreadActionConflict(this.repositories, codexThread.thread_id);
     if (conflict) {
       throw new Error(conflict);
     }

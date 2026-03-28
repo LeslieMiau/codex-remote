@@ -7,3 +7,7 @@ output/
 *.sqlite
 *.log
 .claude/worktrees/
+
+# Harness 临时文件
+PLAN.json
+PROGRESS.md

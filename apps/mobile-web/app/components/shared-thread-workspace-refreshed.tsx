@@ -4,7 +4,6 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type {
-  CodexCapabilitiesResponse,
   CodexMessage,
   NativeRequestRecord,
   CodexThread,
@@ -22,16 +21,28 @@ import {
 } from "react";
 
 import { ChatComposer } from "./chat-composer";
+import {
+  buildRecentChatsSheetCopy,
+  describeThreadTimelineEmptyMessage
+} from "./shared-empty-state-presentation";
+import { useThreadAttachmentController } from "./shared-thread-attachment-controller";
+import { buildSharedThreadDetailsViewModel } from "./shared-thread-details-view-model";
+import { useSharedThreadSwitcherController } from "./shared-thread-switcher-controller";
 import { ChatTimeline } from "./chat-timeline";
 import { useKeyboardViewportState } from "./mobile-viewport";
 import { MobileSheet } from "./mobile-sheet";
+import {
+  buildNativeUserInputResponsePayload,
+  useThreadRequestSheetController
+} from "./shared-thread-request-sheet-controller";
+import {
+  buildSharedThreadWorkspaceScreenModel,
+  formatWorkspaceTimestamp,
+  parseNativeRequestQuestions
+} from "./shared-thread-workspace-screen-model";
 import styles from "./shared-thread-workspace-refreshed.module.css";
 import { getCachedTranscript } from "../lib/client-cache";
-import {
-  getDisplayThreadTitle,
-  isRecoveryFallbackThread,
-  shouldHideThreadFromMobileList
-} from "../lib/chat-thread-presentation";
+import { getDisplayThreadTitle } from "../lib/chat-thread-presentation";
 import {
   buildThreadPatchPath,
   buildThreadPath
@@ -41,7 +52,6 @@ import {
   compactSharedThread,
   forkSharedThread,
   followUpRun,
-  getCodexOverview,
   getThreadSkills,
   interruptSharedRun,
   renameSharedThread,
@@ -58,7 +68,6 @@ import {
   writeThreadFlashMessage
 } from "../lib/flash-message";
 import {
-  formatDateTime,
   localize,
   translateApprovalKind,
   useLocale
@@ -77,10 +86,6 @@ import {
   type PendingSendSkill,
   type PendingSendState
 } from "../lib/pending-send";
-import {
-  getStoredThreadListRoute,
-  type ThreadListRoute
-} from "../lib/thread-list-route-storage";
 import { setStoredLastActiveThread } from "../lib/thread-storage";
 import {
   describeActionError,
@@ -101,18 +106,6 @@ type ConfirmState =
       kind: "reject-approval";
     }
   | null;
-
-interface NativeRequestQuestionOption {
-  description?: string;
-  label: string;
-  value: string;
-}
-
-interface NativeRequestQuestion {
-  id: string;
-  options: NativeRequestQuestionOption[];
-  question: string;
-}
 
 function translateNativeRequestKind(
   locale: "zh" | "en",
@@ -204,84 +197,6 @@ function CheckIcon() {
   );
 }
 
-function parseNativeRequestQuestions(request: NativeRequestRecord | null | undefined) {
-  if (!request?.payload || typeof request.payload !== "object") {
-    return [];
-  }
-
-  const rawQuestions = Array.isArray((request.payload as { questions?: unknown[] }).questions)
-    ? ((request.payload as { questions: unknown[] }).questions ?? [])
-    : [];
-
-  const questions: NativeRequestQuestion[] = [];
-
-  for (const candidate of rawQuestions) {
-    if (!candidate || typeof candidate !== "object") {
-      continue;
-    }
-
-    const record = candidate as Record<string, unknown>;
-    const id = typeof record.id === "string" ? record.id : "";
-    const question = typeof record.question === "string" ? record.question : "";
-    if (!id || !question) {
-      continue;
-    }
-
-    const options: NativeRequestQuestionOption[] = [];
-    if (Array.isArray(record.options)) {
-      for (const option of record.options) {
-        if (!option || typeof option !== "object") {
-          continue;
-        }
-
-        const optionRecord = option as Record<string, unknown>;
-        const label =
-          typeof optionRecord.label === "string"
-            ? optionRecord.label
-            : typeof optionRecord.value === "string"
-              ? optionRecord.value
-              : "";
-        if (!label) {
-          continue;
-        }
-
-        options.push({
-          label,
-          value: typeof optionRecord.value === "string" ? optionRecord.value : label,
-          description:
-            typeof optionRecord.description === "string"
-              ? optionRecord.description
-              : undefined
-        });
-      }
-    }
-
-    questions.push({
-      id,
-      question,
-      options
-    });
-  }
-
-  return questions;
-}
-
-function buildUserInputResponsePayload(
-  questions: NativeRequestQuestion[],
-  answers: Record<string, string>
-) {
-  const nextAnswers: Record<string, { answers: string[] }> = {};
-  for (const question of questions) {
-    nextAnswers[question.id] = {
-      answers: [answers[question.id] ?? ""]
-    };
-  }
-
-  return {
-    answers: nextAnswers
-  };
-}
-
 function buildSelectedInputItems(
   images: PendingSendImage[],
   skills: PendingSendSkill[]
@@ -316,21 +231,6 @@ function injectSkillMentions(prompt: string, skills: PendingSendSkill[]) {
 function getRepoTail(repoRoot: string) {
   const parts = repoRoot.split(/[\\/]/).filter(Boolean);
   return parts[parts.length - 1] ?? repoRoot;
-}
-
-function formatTimestamp(locale: "zh" | "en", value?: string) {
-  if (!value) {
-    return locale === "zh" ? "刚刚" : "Just now";
-  }
-  return formatDateTime(locale, value);
-}
-
-function capabilityMessage(
-  locale: "zh" | "en",
-  capabilities: CodexCapabilitiesResponse | null,
-  fallback: { zh: string; en: string }
-) {
-  return capabilities?.reason ?? localize(locale, fallback);
 }
 
 function summarizeMessageBody(locale: "zh" | "en", message: CodexMessage | null) {
@@ -381,26 +281,9 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
-  const [approvalSheetOpen, setApprovalSheetOpen] = useState(false);
-  const [nativeRequestSheetOpen, setNativeRequestSheetOpen] = useState(false);
-  const [dismissedApprovalId, setDismissedApprovalId] = useState<string | null>(null);
-  const [dismissedNativeRequestId, setDismissedNativeRequestId] = useState<string | null>(null);
-  const [nativeRequestAnswers, setNativeRequestAnswers] = useState<Record<string, string>>({});
-  const [availableSkills, setAvailableSkills] = useState<PendingSendSkill[]>([]);
-  const [selectedSkills, setSelectedSkills] = useState<PendingSendSkill[]>([]);
-  const [skillsError, setSkillsError] = useState<string | null>(null);
-  const [isLoadingSkills, setIsLoadingSkills] = useState(false);
-  const [skillSheetOpen, setSkillSheetOpen] = useState(false);
-  const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
-  const [selectedImages, setSelectedImages] = useState<PendingSendImage[]>([]);
-  const [isUploadingImages, setIsUploadingImages] = useState(false);
   const [threadTitleDraft, setThreadTitleDraft] = useState("");
   const [rollbackTurnsDraft, setRollbackTurnsDraft] = useState("1");
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
-  const [switcherThreads, setSwitcherThreads] = useState<CodexThread[]>([]);
-  const [isLoadingThreads, setIsLoadingThreads] = useState(false);
-  const [threadSwitcherError, setThreadSwitcherError] = useState<string | null>(null);
-  const [returnToListHref, setReturnToListHref] = useState<ThreadListRoute>("/projects");
   const [pendingSendsState, setPendingSendsState] = useState<PendingSendState[]>([]);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
@@ -437,10 +320,6 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
       return next;
     });
   }
-
-  useEffect(() => {
-    selectedImagesRef.current = selectedImages;
-  }, [selectedImages]);
 
   useEffect(() => {
     pendingSendsRef.current = pendingSendsState;
@@ -481,38 +360,39 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
     refreshLatest,
     scrollToLatest
   } = realtime;
+  const {
+    addUploadingImage,
+    attachmentSheetOpen,
+    availableSkills,
+    closeAttachmentSheet,
+    closeSkillSheet,
+    isLoadingSkills,
+    isUploadingImages,
+    markUploadedImageFailed,
+    markUploadedImageReady,
+    openAttachmentSheet,
+    openSkillSheet,
+    removeSelectedImage: removeSelectedImageState,
+    reset: resetAttachments,
+    selectedImages,
+    selectedSkills,
+    setAvailableSkills,
+    setIsLoadingSkills,
+    setIsUploadingImages,
+    setSelectedImages,
+    setSelectedSkills,
+    setSkillsError,
+    skillSheetOpen,
+    skillsError,
+    toggleSelectedSkill
+  } = useThreadAttachmentController();
+
+  useEffect(() => {
+    selectedImagesRef.current = selectedImages;
+  }, [selectedImages]);
 
   useEffect(() => {
     setStoredLastActiveThread(threadId);
-  }, [threadId]);
-
-  useEffect(() => {
-    setReturnToListHref(getStoredThreadListRoute());
-  }, [threadId]);
-
-  useEffect(() => {
-    revokeImagePreviews(selectedImagesRef.current);
-    revokePendingSendPreviews(pendingSendsRef.current);
-    setPrompt("");
-    setToastMessage(null);
-    setMobilePanel(null);
-    setConfirmState(null);
-    setApprovalSheetOpen(false);
-    setNativeRequestSheetOpen(false);
-    setDismissedApprovalId(null);
-    setDismissedNativeRequestId(null);
-    setNativeRequestAnswers({});
-    setSelectedSkills([]);
-    setSelectedImages([]);
-    setSkillsError(null);
-    setSkillSheetOpen(false);
-    setThreadTitleDraft(getCachedTranscript(threadId)?.thread.title ?? "");
-    setRollbackTurnsDraft("1");
-    setLightboxImageUrl(null);
-    setThreadSwitcherError(null);
-    preservedPendingSendPreviewIdsRef.current.clear();
-    pendingSendsRef.current = [];
-    setPendingSendsState([]);
   }, [threadId]);
 
   useEffect(() => {
@@ -581,122 +461,124 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
     }
   }, [threadId]);
 
-  const pendingApprovals = useMemo(
-    () => transcript?.approvals.filter((approval) => approval.status === "requested") ?? [],
-    [transcript]
-  );
-  const pendingNativeRequests = useMemo(
-    () => transcript?.native_requests.filter((request) => request.status === "requested") ?? [],
-    [transcript]
-  );
-  const pendingPatches = useMemo(
-    () =>
-      transcript?.patches.filter(
-        (patch) => patch.status !== "applied" && patch.status !== "discarded"
-      ) ?? [],
-    [transcript]
-  );
-  const pendingApprovalsById = useMemo(
-    () => new Map(pendingApprovals.map((approval) => [approval.approval_id, approval])),
-    [pendingApprovals]
-  );
-  const leadNativeRequest = pendingNativeRequests[0] ?? null;
-  const leadApproval = pendingApprovals[0] ?? null;
-  const leadPatch = pendingPatches[0] ?? null;
-  const nativeRequestQuestions = useMemo(
-    () => parseNativeRequestQuestions(leadNativeRequest),
-    [leadNativeRequest]
-  );
-  const activeRunId = transcript?.thread.active_turn_id ?? null;
-  const isRunActive =
-    Boolean(activeRunId) &&
-    (transcript?.thread.state === "running" ||
-      transcript?.thread.state === "waiting_approval" ||
-      transcript?.thread.state === "waiting_input");
-  const composerDisabledReason = !transcript
-    ? localize(locale, {
-        zh: "正在加载聊天状态。",
-        en: "Loading chat state."
-      })
-    : transcript.thread.archived
-      ? localize(locale, {
-          zh: "这条已归档聊天当前为只读状态。",
-          en: "Archived chats are read-only."
-        })
-      : !capabilities?.run_start
-        ? capabilityMessage(locale, capabilities, {
-            zh: "当前 Codex 版本不支持在手机端发起共享运行。",
-            en: "This Codex build cannot start shared runs from the phone."
-          })
-        : pendingNativeRequests.length > 0
-          ? localize(locale, {
-              zh: "先处理补充输入请求，再继续发新消息。",
-              en: "Resolve the input request before sending a new message."
-            })
-          : pendingApprovals.length > 0
-            ? localize(locale, {
-                zh: "先处理批准请求，再继续发新消息。",
-                en: "Resolve the approval request before sending a new message."
-              })
-            : pendingPatches.length > 0
-              ? localize(locale, {
-                  zh: "先完成变更审查，再继续发新消息。",
-                  en: "Review the pending change before sending a new message."
-                })
-              : selectedImages.some((image) => image.status === "uploading")
-                ? localize(locale, {
-                    zh: "图片上传完成后才能继续发送。",
-                    en: "Wait for image uploads to finish before sending."
-                  })
-                : selectedImages.some((image) => image.status === "failed")
-                  ? localize(locale, {
-                      zh: "请移除上传失败的图片，或重新选择后再发送。",
-                      en: "Remove the failed image upload or try again before sending."
-                    })
-                  : isRunActive && !capabilities?.live_follow_up
-                    ? localize(locale, {
-                        zh: "当前 Codex 版本暂不支持运行中追加指令。",
-                        en: "Live follow-up unavailable on this Codex build."
-                      })
-                    : null;
-  const composerInputDisabled = !transcript || transcript.thread.archived || isMutating;
-  const remoteThreadActionsBlocked = Boolean(
-    transcript &&
-      (!transcript.thread.adapter_thread_ref || transcript.thread.sync_state === "sync_pending")
-  );
-  const returnToListLabel =
-    returnToListHref === "/queue"
-      ? localize(locale, { zh: "返回收件箱", en: "Back to inbox" })
-      : localize(locale, { zh: "打开聊天列表", en: "Open chats" });
-  const selectedModelLabel =
-    sharedSettings?.available_models.find((option) => option.slug === sharedSettings.model)
-      ?.display_name ?? sharedSettings?.model ?? null;
-  const hasImageCapability = Boolean(capabilities?.supports_images && capabilities?.image_inputs);
-  const hasSkillCapability = Boolean(capabilities?.skills_input);
-  const displayThreadTitle = getDisplayThreadTitle(locale, transcript?.thread);
-  const isOfflineFallbackThread = useMemo(() => {
-    if (!transcript?.thread) {
-      return false;
-    }
+  const {
+    isLoadingThreads,
+    loadThreads: loadThreadSwitcher,
+    returnToListHref,
+    selectThread,
+    switcherThreads,
+    threadSwitcherError
+  } = useSharedThreadSwitcherController({
+    locale,
+    onSelectThread(nextThreadId) {
+      setMobilePanel(null);
+      router.push(buildThreadPath(nextThreadId));
+    },
+    threadId
+  });
+  const recentChatsSheetCopy = useMemo(() => buildRecentChatsSheetCopy(locale), [locale]);
 
-    return (
-      isRecoveryFallbackThread(transcript.thread) &&
-      capabilities?.shared_state_available === false
-    );
-  }, [capabilities?.shared_state_available, transcript?.thread]);
-  const headerSubtitle = transcript
-    ? `${transcript.thread.project_label} · ${formatTimestamp(locale, transcript.thread.updated_at)}`
-    : localize(locale, {
-        zh: "正在连接聊天",
-        en: "Connecting"
-      });
-  const topStatus = error
-    ? {
-        detail: error,
-        title: localize(locale, { zh: "当前状态异常", en: "Something needs attention" }),
-        tone: "danger" as const
-      }
-    : null;
+  const screenModel = useMemo(
+    () =>
+      buildSharedThreadWorkspaceScreenModel({
+        transcript,
+        capabilities,
+        sharedSettings,
+        locale,
+        selectedImages,
+        isMutating,
+        error,
+        returnToListHref
+      }),
+    [
+      capabilities,
+      error,
+      isMutating,
+      locale,
+      returnToListHref,
+      selectedImages,
+      sharedSettings,
+      transcript
+    ]
+  );
+  const {
+    activeRunId,
+    composerDisabledReason,
+    composerInputDisabled,
+    displayThreadTitle,
+    hasImageCapability,
+    hasSkillCapability,
+    headerSubtitle,
+    isOfflineFallbackThread,
+    isRunActive,
+    leadApproval,
+    leadNativeRequest,
+    leadPatch,
+    nativeRequestQuestions,
+    pendingApprovals,
+    pendingApprovalsById,
+    pendingNativeRequests,
+    pendingPatches,
+    remoteThreadActionsBlocked,
+    returnToListLabel,
+    selectedModelLabel,
+    topStatus
+  } = screenModel;
+  const {
+    approvalSheetOpen,
+    closeApprovalSheet: dismissApprovalSheetController,
+    closeNativeRequestSheet: dismissNativeRequestSheetController,
+    nativeRequestAnswers,
+    nativeRequestSheetOpen,
+    openApprovalSheet: openApprovalSheetController,
+    openNativeRequestSheet: openNativeRequestSheetController,
+    reset: resetRequestSheets,
+    updateNativeRequestAnswers
+  } = useThreadRequestSheetController({
+    leadApproval,
+    leadNativeRequest,
+    nativeRequestQuestions
+  });
+  const detailsViewModel = useMemo(
+    () =>
+      buildSharedThreadDetailsViewModel({
+        capabilities,
+        hasSkillCapability,
+        isLoading,
+        isMutating,
+        locale,
+        remoteThreadActionsBlocked,
+        selectedModelLabel,
+        transcript
+      }),
+    [
+      capabilities,
+      hasSkillCapability,
+      isLoading,
+      isMutating,
+      locale,
+      remoteThreadActionsBlocked,
+      selectedModelLabel,
+      transcript
+    ]
+  );
+
+  useEffect(() => {
+    revokeImagePreviews(selectedImagesRef.current);
+    revokePendingSendPreviews(pendingSendsRef.current);
+    setPrompt("");
+    setToastMessage(null);
+    setMobilePanel(null);
+    setConfirmState(null);
+    resetRequestSheets();
+    resetAttachments();
+    setThreadTitleDraft(getCachedTranscript(threadId)?.thread.title ?? "");
+    setRollbackTurnsDraft("1");
+    setLightboxImageUrl(null);
+    preservedPendingSendPreviewIdsRef.current.clear();
+    pendingSendsRef.current = [];
+    setPendingSendsState([]);
+  }, [resetAttachments, resetRequestSheets, threadId]);
 
   useEffect(() => {
     if (!transcript) {
@@ -726,47 +608,6 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
     previousRemoteActionsBlockedRef.current = remoteThreadActionsBlocked;
   }, [locale, remoteThreadActionsBlocked, transcript]);
 
-  useEffect(() => {
-    if (!leadApproval) {
-      setApprovalSheetOpen(false);
-      setDismissedApprovalId(null);
-      return;
-    }
-
-    if (leadApproval.approval_id !== dismissedApprovalId) {
-      setApprovalSheetOpen(true);
-    }
-  }, [dismissedApprovalId, leadApproval]);
-
-  useEffect(() => {
-    if (!leadNativeRequest) {
-      setNativeRequestSheetOpen(false);
-      setDismissedNativeRequestId(null);
-      setNativeRequestAnswers({});
-      return;
-    }
-
-    if (leadNativeRequest.native_request_id !== dismissedNativeRequestId) {
-      setNativeRequestSheetOpen(true);
-    }
-  }, [dismissedNativeRequestId, leadNativeRequest]);
-
-  useEffect(() => {
-    if (!leadNativeRequest) {
-      setNativeRequestAnswers({});
-      return;
-    }
-
-    const questions = parseNativeRequestQuestions(leadNativeRequest);
-    setNativeRequestAnswers((current) => {
-      const next: Record<string, string> = {};
-      for (const question of questions) {
-        next[question.id] = current[question.id] ?? question.options[0]?.value ?? "";
-      }
-      return next;
-    });
-  }, [leadNativeRequest]);
-
   async function runMutation(action: () => Promise<void>, successMessage?: string) {
     setIsMutating(true);
     setError(null);
@@ -784,25 +625,13 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
     }
   }
 
-  function toggleSelectedSkill(skill: PendingSendSkill) {
-    setSelectedSkills((current) => {
-      const exists = current.some((candidate) => candidate.path === skill.path);
-      if (exists) {
-        return current.filter((candidate) => candidate.path !== skill.path);
-      }
-      return [...current, skill];
-    });
-  }
-
   function removeSelectedImage(localId: string) {
-    setSelectedImages((current) => {
-      const next = current.filter((image) => image.local_id !== localId);
-      const removed = current.find((image) => image.local_id === localId);
-      if (removed) {
-        revokePreviewUrl(removed.preview_url);
-      }
-      return next;
-    });
+    const removed =
+      selectedImages.find((image) => image.local_id === localId) ?? null;
+    removeSelectedImageState(localId);
+    if (removed) {
+      revokePreviewUrl(removed.preview_url);
+    }
   }
 
   async function handleImageSelection(event: ChangeEvent<HTMLInputElement>) {
@@ -822,44 +651,20 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
           : `${Date.now()}-${file.name}`;
       const previewUrl = URL.createObjectURL(file);
 
-      setSelectedImages((current) => [
-        ...current,
-        {
-          local_id: localId,
-          file_name: file.name,
-          content_type: file.type,
-          preview_url: previewUrl,
-          status: "uploading"
-        }
-      ]);
+      addUploadingImage({
+        local_id: localId,
+        file_name: file.name,
+        content_type: file.type,
+        preview_url: previewUrl,
+        status: "uploading"
+      });
 
       try {
         const uploaded = await uploadSharedThreadImage(threadId, file);
-        setSelectedImages((current) =>
-          current.map((image) =>
-            image.local_id === localId
-              ? {
-                  ...image,
-                  id: uploaded.attachment_id,
-                  attachment_id: uploaded.attachment_id,
-                  status: "ready"
-                }
-              : image
-          )
-        );
+        markUploadedImageReady(localId, uploaded.attachment_id);
       } catch (uploadError) {
         const message = describeActionError(locale, uploadError);
-        setSelectedImages((current) =>
-          current.map((image) =>
-            image.local_id === localId
-              ? {
-                  ...image,
-                  status: "failed",
-                  error: message
-                }
-              : image
-          )
-        );
+        markUploadedImageFailed(localId, message);
         setError(message);
       }
     }
@@ -869,28 +674,11 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
 
   async function openThreadSwitcher() {
     setMobilePanel("threads");
-    setThreadSwitcherError(null);
-    setIsLoadingThreads(true);
-    try {
-      const overview = await getCodexOverview({
-        includeArchived: true
-      });
-      setSwitcherThreads(
-        [...overview.threads]
-          .filter((thread) => !shouldHideThreadFromMobileList(thread))
-          .sort((left, right) => right.updated_at.localeCompare(left.updated_at))
-      );
-    } catch (loadError) {
-      setThreadSwitcherError(describeActionError(locale, loadError));
-    } finally {
-      setIsLoadingThreads(false);
-    }
+    await loadThreadSwitcher();
   }
 
   function handleThreadSelect(nextThreadId: string) {
-    setStoredLastActiveThread(nextThreadId);
-    setMobilePanel(null);
-    router.push(buildThreadPath(nextThreadId));
+    selectThread(nextThreadId);
   }
 
   async function handleRenameThread() {
@@ -1018,29 +806,21 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
   }
 
   function openApprovalSheet() {
-    setDismissedApprovalId(null);
     setMobilePanel(null);
-    setApprovalSheetOpen(true);
+    openApprovalSheetController();
   }
 
   function closeApprovalSheet() {
-    if (leadApproval) {
-      setDismissedApprovalId(leadApproval.approval_id);
-    }
-    setApprovalSheetOpen(false);
+    dismissApprovalSheetController();
   }
 
   function openNativeRequestSheet() {
-    setDismissedNativeRequestId(null);
     setMobilePanel(null);
-    setNativeRequestSheetOpen(true);
+    openNativeRequestSheetController();
   }
 
   function closeNativeRequestSheet() {
-    if (leadNativeRequest) {
-      setDismissedNativeRequestId(leadNativeRequest.native_request_id);
-    }
-    setNativeRequestSheetOpen(false);
+    dismissNativeRequestSheetController();
   }
 
   async function handleNativeRequestAction(action: "respond" | "cancel") {
@@ -1050,7 +830,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
 
     const responsePayload =
       action === "respond" && leadNativeRequest.kind === "user_input"
-        ? buildUserInputResponsePayload(nativeRequestQuestions, nativeRequestAnswers)
+        ? buildNativeUserInputResponsePayload(nativeRequestQuestions, nativeRequestAnswers)
         : undefined;
 
     await runMutation(async () => {
@@ -1059,7 +839,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
         action,
         responsePayload
       });
-      setNativeRequestSheetOpen(false);
+      dismissNativeRequestSheetController();
     }, action === "cancel"
       ? localize(locale, {
           zh: "这条补充输入请求已取消。",
@@ -1329,12 +1109,9 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
             <div className={styles.timelineInner}>
               <ChatTimeline
                 emptyMessage={
-                  isOfflineFallbackThread
-                    ? localize(locale, {
-                        zh: "共享聊天状态当前处于退化模式，这条聊天的消息暂时不可用。",
-                        en: "Shared chat state is degraded right now, so messages for this chat are temporarily unavailable."
-                      })
-                    : undefined
+                  describeThreadTimelineEmptyMessage(locale, {
+                    degraded: isOfflineFallbackThread
+                  })
                 }
                 hasMoreRemoteHistory={Boolean(transcript?.has_more)}
                 hiddenItemCount={hiddenTimelineItemCount}
@@ -1386,7 +1163,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
             onInterrupt={handleInterrupt}
             onOpenAttachmentSheet={() => {
               setMobilePanel(null);
-              setAttachmentSheetOpen(true);
+              openAttachmentSheet();
             }}
             onOpenApprovalSheet={openApprovalSheet}
             onOpenNativeRequestSheet={openNativeRequestSheet}
@@ -1426,8 +1203,8 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
               role="alert"
             >
               <div className="codex-status-strip__copy">
-                <p className="section-label">{localize(locale, { zh: "对话列表异常", en: "Chat list issue" })}</p>
-                <strong>{localize(locale, { zh: "最近对话暂时不可用", en: "Recent chats are temporarily unavailable" })}</strong>
+                <p className="section-label">{recentChatsSheetCopy.issueLabel}</p>
+                <strong>{recentChatsSheetCopy.unavailableTitle}</strong>
                 <p>{threadSwitcherError}</p>
               </div>
             </section>
@@ -1435,11 +1212,11 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
           <div className={styles.sheetList}>
             {isLoadingThreads ? (
               <p className={styles.sheetEmpty}>
-                {localize(locale, { zh: "正在加载最近对话。", en: "Loading recent chats." })}
+                {recentChatsSheetCopy.loading}
               </p>
             ) : switcherThreads.length === 0 ? (
               <p className={styles.sheetEmpty}>
-                {localize(locale, { zh: "当前还没有别的对话。", en: "No other chats yet." })}
+                {recentChatsSheetCopy.empty}
               </p>
             ) : (
               switcherThreads.map((thread) => (
@@ -1491,7 +1268,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
           eyebrow={localize(locale, { zh: "附件", en: "Attachments" })}
           fullHeight={false}
           open={attachmentSheetOpen}
-          onClose={() => setAttachmentSheetOpen(false)}
+          onClose={closeAttachmentSheet}
           title={localize(locale, { zh: "添加附件", en: "Add attachment" })}
           variant="compact"
         >
@@ -1501,7 +1278,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                 className={styles.sheetMenuButton}
                 disabled={isMutating || isUploadingImages}
                 onClick={() => {
-                  setAttachmentSheetOpen(false);
+                  closeAttachmentSheet();
                   imageInputRef.current?.click();
                 }}
                 type="button"
@@ -1523,8 +1300,8 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                 className={styles.sheetMenuButton}
                 disabled={isMutating || isLoadingSkills}
                 onClick={() => {
-                  setAttachmentSheetOpen(false);
-                  setSkillSheetOpen(true);
+                  closeAttachmentSheet();
+                  openSkillSheet();
                 }}
                 type="button"
               >
@@ -1566,7 +1343,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
               <div className={styles.sheetInfoList}>
                 <div className={styles.sheetInfoRow}>
                   <span>{localize(locale, { zh: "模型", en: "Model" })}</span>
-                  <strong>{selectedModelLabel ?? "-"}</strong>
+                  <strong>{detailsViewModel.modelValue}</strong>
                 </div>
                 <div className={styles.sheetInfoRow}>
                   <span>{localize(locale, { zh: "推理", en: "Reasoning" })}</span>
@@ -1615,37 +1392,35 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
               <div className={styles.sheetActionGrid}>
                 <button
                   className="secondary-button"
-                  disabled={isMutating || !capabilities?.thread_archive || remoteThreadActionsBlocked}
+                  disabled={detailsViewModel.archiveDisabled}
                   onClick={() => void handleArchiveToggle()}
                   type="button"
                 >
-                  {transcript?.thread.archived
-                    ? localize(locale, { zh: "取消归档", en: "Unarchive" })
-                    : localize(locale, { zh: "归档", en: "Archive" })}
+                  {detailsViewModel.archiveLabel}
                 </button>
                 <button
                   className="secondary-button"
-                  disabled={isMutating || !capabilities?.thread_compact || remoteThreadActionsBlocked}
+                  disabled={detailsViewModel.compactDisabled}
                   onClick={() => void handleCompactThread()}
                   type="button"
                 >
-                  {localize(locale, { zh: "压缩上下文", en: "Compact" })}
+                  {detailsViewModel.compactLabel}
                 </button>
                 <button
                   className="secondary-button"
-                  disabled={isMutating || !capabilities?.thread_fork || remoteThreadActionsBlocked}
+                  disabled={detailsViewModel.forkDisabled}
                   onClick={() => void handleForkThread()}
                   type="button"
                 >
-                  {localize(locale, { zh: "分支一条聊天", en: "Fork chat" })}
+                  {detailsViewModel.forkLabel}
                 </button>
                 <button
                   className="secondary-button"
-                  disabled={isMutating || !capabilities?.review_start || remoteThreadActionsBlocked}
+                  disabled={detailsViewModel.reviewDisabled}
                   onClick={() => void handleStartReview()}
                   type="button"
                 >
-                  {localize(locale, { zh: "开始 review", en: "Start review" })}
+                  {detailsViewModel.reviewLabel}
                 </button>
               </div>
               <div className={styles.sheetField}>
@@ -1653,7 +1428,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                   <span>{localize(locale, { zh: "回滚轮数", en: "Rollback turns" })}</span>
                   <input
                     className={styles.sheetInput}
-                    disabled={isMutating || !capabilities?.thread_rollback || remoteThreadActionsBlocked}
+                    disabled={detailsViewModel.rollbackInputDisabled}
                     inputMode="numeric"
                     min="1"
                     onChange={(event) => setRollbackTurnsDraft(event.target.value)}
@@ -1663,19 +1438,16 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                 <div className={styles.sheetActionGrid}>
                   <button
                     className="danger-button"
-                    disabled={isMutating || !capabilities?.thread_rollback || remoteThreadActionsBlocked}
+                    disabled={detailsViewModel.rollbackDisabled}
                     onClick={() => void handleRollbackThread()}
                     type="button"
                   >
-                    {localize(locale, { zh: "回滚聊天", en: "Rollback chat" })}
+                    {detailsViewModel.rollbackLabel}
                   </button>
                 </div>
-                {remoteThreadActionsBlocked ? (
+                {detailsViewModel.syncBlockedNote ? (
                   <p className={styles.sheetNote}>
-                    {localize(locale, {
-                      zh: "这条聊天还在等待进入原生 Codex 时间线，归档、分支、review 和回滚等操作会在同步完成后开放。",
-                      en: "This chat is still entering the native Codex timeline. Archive, fork, review, and rollback unlock after sync finishes."
-                    })}
+                    {detailsViewModel.syncBlockedNote}
                   </p>
                 ) : null}
               </div>
@@ -1695,7 +1467,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                 </button>
                 <button
                   className="secondary-button"
-                  disabled={isMutating || isLoading}
+                  disabled={detailsViewModel.quickActions.refreshDisabled}
                   onClick={() => void refreshLatest()}
                   type="button"
                 >
@@ -1703,10 +1475,10 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                 </button>
                 <button
                   className="secondary-button"
-                  disabled={isMutating || !hasSkillCapability}
+                  disabled={detailsViewModel.quickActions.pickSkillsDisabled}
                   onClick={() => {
                     setMobilePanel(null);
-                    setSkillSheetOpen(true);
+                    openSkillSheet();
                   }}
                   type="button"
                 >
@@ -1834,7 +1606,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                 <div className="codex-page-card__meta">
                   <span className="status-dot">
                     {localize(locale, { zh: "请求于", en: "Requested" })}{" "}
-                    {formatTimestamp(locale, leadNativeRequest.requested_at)}
+                    {formatWorkspaceTimestamp(locale, leadNativeRequest.requested_at)}
                   </span>
                   {pendingNativeRequests.length > 1 ? (
                     <span className="status-dot">
@@ -1860,7 +1632,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                                 key={option.value}
                                 className={selected ? "primary-button" : "secondary-button"}
                                 onClick={() =>
-                                  setNativeRequestAnswers((current) => ({
+                                  updateNativeRequestAnswers((current) => ({
                                     ...current,
                                     [question.id]: option.value
                                   }))
@@ -1876,7 +1648,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                         <input
                           className="chrome-input"
                           onChange={(event) =>
-                            setNativeRequestAnswers((current) => ({
+                            updateNativeRequestAnswers((current) => ({
                               ...current,
                               [question.id]: event.target.value
                             }))
@@ -1918,7 +1690,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
         <MobileSheet
           eyebrow={localize(locale, { zh: "技能", en: "Skills" })}
           open={skillSheetOpen}
-          onClose={() => setSkillSheetOpen(false)}
+          onClose={closeSkillSheet}
           title={localize(locale, { zh: "技能", en: "Skills" })}
           variant="compact"
         >
@@ -2027,7 +1799,7 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                 <div className="codex-page-card__meta">
                   <span className="status-dot">
                     {localize(locale, { zh: "请求于", en: "Requested" })}{" "}
-                    {formatTimestamp(locale, leadApproval.requested_at)}
+                    {formatWorkspaceTimestamp(locale, leadApproval.requested_at)}
                   </span>
                   {pendingApprovals.length > 1 ? (
                     <span className="status-dot">

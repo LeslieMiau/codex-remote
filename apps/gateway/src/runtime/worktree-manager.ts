@@ -9,6 +9,139 @@ import { ensureWithinRoot, slugify } from "../lib/path";
 
 const execFileAsync = promisify(execFile);
 
+function patchConflict(message: string) {
+  return new Error(`patch_apply_conflict:${message}`);
+}
+
+function patchInvalid(message: string) {
+  return new Error(`patch_apply_invalid:${message}`);
+}
+
+function splitLines(value: string) {
+  return value.split("\n");
+}
+
+function applyUnifiedDiff(currentContent: string | null, unifiedDiff: string) {
+  const sourceLines = splitLines(currentContent ?? "");
+  const diffLines = unifiedDiff.replace(/\r\n/g, "\n").split("\n");
+  const hunks = diffLines.filter((line) => line.startsWith("@@"));
+
+  if (hunks.length === 0) {
+    throw patchInvalid("missing_hunk");
+  }
+
+  const result: string[] = [];
+  let sourceIndex = 0;
+  let lineIndex = 0;
+
+  while (lineIndex < diffLines.length) {
+    const header = diffLines[lineIndex];
+    if (!header.startsWith("@@")) {
+      lineIndex += 1;
+      continue;
+    }
+
+    const match = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(header);
+    if (!match) {
+      throw patchInvalid("invalid_hunk_header");
+    }
+
+    const sourceStart = Math.max(0, Number.parseInt(match[1], 10) - 1);
+    if (sourceStart < sourceIndex) {
+      throw patchInvalid("overlapping_hunk");
+    }
+
+    result.push(...sourceLines.slice(sourceIndex, sourceStart));
+    sourceIndex = sourceStart;
+    lineIndex += 1;
+
+    while (lineIndex < diffLines.length && !diffLines[lineIndex].startsWith("@@")) {
+      const diffLine = diffLines[lineIndex];
+
+      if (
+        diffLine.startsWith("--- ") ||
+        diffLine.startsWith("+++ ") ||
+        diffLine.startsWith("diff --git ") ||
+        diffLine.startsWith("index ")
+      ) {
+        lineIndex += 1;
+        continue;
+      }
+      if (diffLine === "\\ No newline at end of file") {
+        lineIndex += 1;
+        continue;
+      }
+      if (diffLine.length === 0 && lineIndex === diffLines.length - 1) {
+        lineIndex += 1;
+        continue;
+      }
+
+      const prefix = diffLine[0];
+      const content = diffLine.slice(1);
+      const currentLine = sourceLines[sourceIndex];
+
+      if (prefix === " ") {
+        if (currentLine !== content) {
+          throw patchConflict("context_mismatch");
+        }
+        result.push(currentLine);
+        sourceIndex += 1;
+        lineIndex += 1;
+        continue;
+      }
+
+      if (prefix === "-") {
+        if (currentLine !== content) {
+          throw patchConflict("delete_mismatch");
+        }
+        sourceIndex += 1;
+        lineIndex += 1;
+        continue;
+      }
+
+      if (prefix === "+") {
+        result.push(content);
+        lineIndex += 1;
+        continue;
+      }
+
+      throw patchInvalid("unsupported_diff_line");
+    }
+  }
+
+  result.push(...sourceLines.slice(sourceIndex));
+  return result.join("\n");
+}
+
+function resolveNextContent(currentContent: string | null, change: PatchChange) {
+  if (typeof change.unified_diff === "string" && change.unified_diff.trim().length > 0) {
+    if (change.before_content !== null && currentContent !== change.before_content) {
+      throw patchConflict("before_content_mismatch");
+    }
+    return applyUnifiedDiff(currentContent, change.unified_diff);
+  }
+
+  if (change.after_content === null) {
+    if (change.before_content !== null && currentContent !== change.before_content) {
+      throw patchConflict("delete_base_mismatch");
+    }
+    if (change.before_content === null && currentContent !== null) {
+      throw patchConflict("delete_requires_base");
+    }
+    return null;
+  }
+
+  if (change.before_content !== null) {
+    if (currentContent !== change.before_content) {
+      throw patchConflict("replace_base_mismatch");
+    }
+  } else if (currentContent !== null && currentContent !== change.after_content) {
+    throw patchConflict("unexpected_existing_file");
+  }
+
+  return change.after_content;
+}
+
 async function pathExists(targetPath: string): Promise<boolean> {
   try {
     await fs.access(targetPath);
@@ -101,15 +234,18 @@ export class WorktreeManager {
         beforeContent = null;
       }
 
-      if (change.after_content === null) {
+      const nextContent = resolveNextContent(beforeContent, change);
+
+      if (nextContent === null) {
         await fs.rm(absolutePath, { force: true });
       } else {
-        await fs.writeFile(absolutePath, change.after_content, "utf8");
+        await fs.writeFile(absolutePath, nextContent, "utf8");
       }
 
       applied.push({
         ...change,
-        before_content: beforeContent
+        before_content: beforeContent,
+        after_content: nextContent
       });
     }
 

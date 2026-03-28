@@ -31,6 +31,7 @@ import {
   isRecoveryFallbackThread
 } from "../lib/chat-thread-presentation";
 import { DetailShell } from "./detail-shell";
+import { buildQueueEmptyStateCopy } from "./shared-empty-state-presentation";
 import styles from "./queue-screen.module.css";
 
 const POLL_INTERVAL_MS = 2_500;
@@ -250,6 +251,22 @@ export function QueueScreen() {
       overview.threads.every((thread) => isRecoveryFallbackThread(thread))
     );
   }, [overview]);
+  const queueEmptyState = useMemo(
+    () =>
+      buildQueueEmptyStateCopy({
+        inputFilterActive: inputFocusFilter !== "all" && showFilterBar,
+        isFallbackOnlyOverview,
+        locale,
+        reason: overview?.capabilities.reason
+      }),
+    [
+      inputFocusFilter,
+      isFallbackOnlyOverview,
+      locale,
+      overview?.capabilities.reason,
+      showFilterBar
+    ]
+  );
   const summaryItems = [
     {
       key: "waiting",
@@ -484,31 +501,9 @@ export function QueueScreen() {
           <div className={styles.list}>{filteredActionableQueue.map((entry) => renderQueueRow(entry))}</div>
         ) : (
           <section className={styles.empty}>
-            <p>
-              {isFallbackOnlyOverview
-                ? overview?.capabilities.reason ??
-                  localize(locale, {
-                    zh: "共享聊天状态暂时不可用，收件箱目前无法同步。",
-                    en: "Shared chat state is temporarily unavailable, so the inbox cannot sync right now."
-                  })
-                : inputFocusFilter === "all" || !showFilterBar
-                ? localize(locale, {
-                    zh: "现在没有需要你点开的事项。",
-                    en: "Nothing needs your attention right now."
-                  })
-                : localize(locale, {
-                    zh: "当前筛选下没有事项。",
-                    en: "No inbox items match this filter."
-                  })}
-            </p>
+            <p>{queueEmptyState.body}</p>
             <Link className={styles.emptyAction} href="/projects">
-              {isFallbackOnlyOverview
-                ? isZh
-                  ? "回到聊天列表"
-                  : "Back to chats"
-                : isZh
-                  ? "回到聊天"
-                  : "Back to chats"}
+              {queueEmptyState.actionLabel}
             </Link>
           </section>
         )}

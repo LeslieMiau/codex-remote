@@ -328,6 +328,139 @@ describe("gateway recovery routes", () => {
     ).resolves.toContain("Recovered through server route");
   });
 
+  it("applies unified diff patches and surfaces patch conflicts as 409", async () => {
+    const { runtime, repoRoot } = await createRuntime();
+    const timestamp = nowIso();
+    const filePath = path.join(repoRoot, "notes", "existing.txt");
+
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, "alpha\nbeta\n", "utf8");
+
+    runtime.store.saveProject({
+      project_id: "project_demo",
+      repo_root: repoRoot,
+      created_at: timestamp,
+      updated_at: timestamp
+    });
+    runtime.store.saveThread({
+      project_id: "project_demo",
+      thread_id: "thread_demo_diff",
+      state: "needs_review",
+      active_turn_id: "turn_demo_diff",
+      pending_turn_ids: [],
+      pending_approval_ids: [],
+      worktree_path: repoRoot,
+      adapter_kind: "codex-app-server",
+      last_stream_seq: 0,
+      created_at: timestamp,
+      updated_at: timestamp
+    });
+    runtime.store.saveTurn({
+      project_id: "project_demo",
+      thread_id: "thread_demo_diff",
+      turn_id: "turn_demo_diff",
+      prompt: "Update existing file",
+      state: "streaming",
+      created_at: timestamp,
+      updated_at: timestamp
+    });
+    runtime.store.savePatch({
+      patch_id: "patch_demo_diff",
+      project_id: "project_demo",
+      thread_id: "thread_demo_diff",
+      turn_id: "turn_demo_diff",
+      status: "generated",
+      summary: "Update existing file",
+      files: [
+        {
+          path: "notes/existing.txt",
+          added_lines: 1,
+          removed_lines: 1
+        }
+      ],
+      changes: [
+        {
+          path: "notes/existing.txt",
+          before_content: null,
+          after_content: null,
+          unified_diff: [
+            "--- a/notes/existing.txt",
+            "+++ b/notes/existing.txt",
+            "@@ -1,2 +1,2 @@",
+            " alpha",
+            "-beta",
+            "+gamma"
+          ].join("\n")
+        }
+      ],
+      rollback_available: false,
+      created_at: timestamp,
+      updated_at: timestamp
+    });
+
+    const applyPatch = await runtime.app.inject({
+      method: "POST",
+      url: "/patches/patch_demo_diff/apply",
+      payload: {
+        actor_id: "phone",
+        request_id: "req-apply-diff"
+      }
+    });
+
+    expect(applyPatch.statusCode).toBe(200);
+    expect(applyPatch.json().patch.status).toBe("applied");
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("alpha\ngamma\n");
+
+    runtime.store.savePatch({
+      patch_id: "patch_demo_conflict",
+      project_id: "project_demo",
+      thread_id: "thread_demo_diff",
+      turn_id: "turn_demo_diff",
+      status: "generated",
+      summary: "Conflict existing file",
+      files: [
+        {
+          path: "notes/existing.txt",
+          added_lines: 1,
+          removed_lines: 1
+        }
+      ],
+      changes: [
+        {
+          path: "notes/existing.txt",
+          before_content: null,
+          after_content: null,
+          unified_diff: [
+            "--- a/notes/existing.txt",
+            "+++ b/notes/existing.txt",
+            "@@ -1,2 +1,2 @@",
+            " alpha",
+            "-beta",
+            "+delta"
+          ].join("\n")
+        }
+      ],
+      rollback_available: false,
+      created_at: timestamp,
+      updated_at: timestamp
+    });
+
+    const conflictPatch = await runtime.app.inject({
+      method: "POST",
+      url: "/patches/patch_demo_conflict/apply",
+      payload: {
+        actor_id: "phone",
+        request_id: "req-apply-conflict"
+      }
+    });
+
+    expect(conflictPatch.statusCode).toBe(409);
+    expect(conflictPatch.json()).toMatchObject({
+      error: "patch_apply_conflict:delete_mismatch"
+    });
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("alpha\ngamma\n");
+  });
+
   it("replays approval events over SSE", async () => {
     const { runtime, repoRoot } = await createRuntime();
     const { approvalId, threadId } = await seedPendingApproval(runtime, repoRoot, {

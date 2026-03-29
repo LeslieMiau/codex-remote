@@ -259,7 +259,7 @@
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  padding: 15px 16px;
+  padding: 13px 16px;
   color: #132033;
   text-decoration: none;
   border-top: 1px solid rgba(19, 32, 51, 0.06);
@@ -278,15 +278,15 @@
 }
 
 .threadAvatar {
-  width: 46px;
-  height: 46px;
+  width: 44px;
+  height: 44px;
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  border-radius: 16px;
+  border-radius: 50%;
   background: linear-gradient(180deg, #7eadff, #5f8ff3);
   color: #fff;
-  font-size: 22px;
+  font-size: 18px;
   line-height: 1;
   font-weight: 700;
   box-shadow: inset 0 -10px 16px rgba(19, 32, 51, 0.08);
@@ -299,39 +299,49 @@
 
 .threadHead {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
 }
 
-.threadTitleWrap {
+.threadTitle {
   min-width: 0;
   flex: 1 1 auto;
-}
-
-.threadTitleWrap strong {
   display: block;
-  font-size: 18px;
-  line-height: 1.25;
-  font-weight: 690;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 17px;
+  line-height: 1.3;
+  font-weight: 650;
 }
 
 .threadPreview {
-  margin: 4px 0 0;
+  margin: 3px 0 0;
   color: #64738b;
-  font-size: 15px;
-  line-height: 1.45;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
+  font-size: 14px;
+  line-height: 1.4;
   overflow: hidden;
-  -webkit-line-clamp: 2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.threadMetaLine {
+  margin: 3px 0 0;
+  color: #9aa5b8;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .threadAside {
   flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
 }
 
 .threadTime {
@@ -342,42 +352,17 @@
 }
 
 .threadBadge {
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
   display: grid;
   place-items: center;
   border-radius: 999px;
   background: #2464eb;
   color: #fff;
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1;
   font-weight: 700;
-}
-
-.threadMeta {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex-wrap: wrap;
-  margin-top: 9px;
-}
-
-.metaTag {
-  display: inline-flex;
-  align-items: center;
-  min-height: 24px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: #f1f4f8;
-  color: #67768c;
-  font-size: 12px;
-  line-height: 1;
-}
-
-.metaTagWarning {
-  background: rgba(214, 147, 52, 0.14);
-  color: #a26d1a;
 }
 
 .emptyState {
@@ -509,11 +494,15 @@
     padding: 14px;
   }
 
-  .threadTitleWrap strong {
-    font-size: 17px;
+  .threadTitle {
+    font-size: 16px;
   }
 
   .threadPreview {
-    font-size: 14px;
+    font-size: 13px;
+  }
+
+  .threadMetaLine {
+    font-size: 11px;
   }
 }

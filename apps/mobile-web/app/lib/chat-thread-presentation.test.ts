@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildMobileThreadListLines,
   getDisplayThreadTitle,
   hasBlockingThreadAttention,
   isRecoveryFallbackThread,
@@ -121,5 +122,48 @@ describe("chat thread presentation", () => {
         title: "Recovered thread"
       })
     ).toBe(false);
+  });
+
+  it("omits duplicated repo names from mobile thread metadata", () => {
+    expect(
+      buildMobileThreadListLines({
+        displayTitle: "codex-remote",
+        preview: "Ready for follow-up",
+        project_label: "codex-remote",
+        repo_root: "/Users/miau/Documents/codex-remote"
+      })
+    ).toEqual({
+      secondaryLine: "Ready for follow-up",
+      tertiaryLine: null
+    });
+  });
+
+  it("keeps distinct project and repo metadata when they add context", () => {
+    expect(
+      buildMobileThreadListLines({
+        displayTitle: "Fix the queue drawer",
+        preview: "Needs follow-up",
+        project_label: "Codex Remote",
+        repo_root: "/Users/miau/Documents/codex-remote"
+      })
+    ).toEqual({
+      secondaryLine: "Needs follow-up · Codex Remote",
+      tertiaryLine: "codex-remote"
+    });
+  });
+
+  it("prefers status copy over repo metadata on the secondary line", () => {
+    expect(
+      buildMobileThreadListLines({
+        displayTitle: "Fix the queue drawer",
+        preview: "Approval needed",
+        project_label: "Codex Remote",
+        repo_root: "/Users/miau/Documents/codex-remote",
+        statusLabel: "Approval"
+      })
+    ).toEqual({
+      secondaryLine: "Approval needed · Approval",
+      tertiaryLine: "Codex Remote · codex-remote"
+    });
   });
 });

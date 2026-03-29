@@ -36,8 +36,8 @@ import { filterThreadsForQuery } from "../lib/thread-search";
 import { setStoredThreadListRoute } from "../lib/thread-list-route-storage";
 import { setStoredLastActiveThread } from "../lib/thread-storage";
 import {
+  buildMobileThreadListLines,
   getDisplayThreadTitle,
-  hasBlockingThreadAttention,
   isRecoveryFallbackThread,
   shouldHideThreadFromMobileList
 } from "../lib/chat-thread-presentation";
@@ -50,11 +50,6 @@ const POLL_INTERVAL_MS = 2_000;
 
 function getAvatarLabel(value: string) {
   return Array.from(value.trim())[0]?.toUpperCase() ?? "#";
-}
-
-function getRepoTail(repoRoot: string) {
-  const parts = repoRoot.split(/[\\/]/).filter(Boolean);
-  return parts[parts.length - 1] ?? repoRoot;
 }
 
 function getThreadBadgeLabel(thread: CodexThread) {
@@ -295,6 +290,13 @@ export function OverviewScreen() {
             : thread.state === "failed" || thread.state === "system_error"
               ? localize(locale, { zh: "失败", en: "Failed" })
               : null;
+    const { secondaryLine, tertiaryLine } = buildMobileThreadListLines({
+      displayTitle,
+      preview,
+      project_label: thread.project_label,
+      repo_root: thread.repo_root,
+      statusLabel: blockingTag
+    });
 
     return (
       <Link
@@ -312,28 +314,14 @@ export function OverviewScreen() {
         </div>
         <div className={styles.threadBody}>
           <div className={styles.threadHead}>
-            <div className={styles.threadTitleWrap}>
-              <strong>{displayTitle}</strong>
-              {preview ? <p className={styles.threadPreview}>{preview}</p> : null}
-            </div>
+            <strong className={styles.threadTitle}>{displayTitle}</strong>
             <div className={styles.threadAside}>
               <span className={styles.threadTime}>{formatDateTime(locale, thread.updated_at)}</span>
               {badgeLabel ? <span className={styles.threadBadge}>{badgeLabel}</span> : null}
             </div>
           </div>
-          <div className={styles.threadMeta}>
-            <span className={styles.metaTag}>{thread.project_label}</span>
-            <span className={styles.metaTag}>{getRepoTail(thread.repo_root)}</span>
-            {blockingTag ? (
-              <span
-                className={`${styles.metaTag} ${
-                  hasBlockingThreadAttention(thread) ? styles.metaTagWarning : ""
-                }`}
-              >
-                {blockingTag}
-              </span>
-            ) : null}
-          </div>
+          {secondaryLine ? <p className={styles.threadPreview}>{secondaryLine}</p> : null}
+          {tertiaryLine ? <p className={styles.threadMetaLine}>{tertiaryLine}</p> : null}
         </div>
       </Link>
     );

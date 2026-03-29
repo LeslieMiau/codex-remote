@@ -21,6 +21,40 @@ type MobileThreadPreview = Pick<
   | "title"
 >;
 
+type MobileThreadListLinesInput = Pick<CodexThread, "project_label" | "repo_root"> & {
+  displayTitle: string;
+  preview?: string | null;
+  statusLabel?: string | null;
+};
+
+function getNormalizedCopyKey(value: string) {
+  return value.trim().toLocaleLowerCase();
+}
+
+function appendUniqueCopy(
+  target: string[],
+  seen: Set<string>,
+  value: string | null | undefined
+) {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return;
+  }
+
+  const key = getNormalizedCopyKey(trimmed);
+  if (seen.has(key)) {
+    return;
+  }
+
+  seen.add(key);
+  target.push(trimmed);
+}
+
+export function getRepoTail(repoRoot: string) {
+  const parts = repoRoot.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] ?? repoRoot;
+}
+
 export function isRecoveryFallbackThread(thread: ThreadPreview | null | undefined) {
   if (!thread) {
     return false;
@@ -73,4 +107,29 @@ export function shouldHideThreadFromMobileList(
   }
 
   return isRecoveryFallbackThread(thread) && !hasBlockingThreadAttention(thread);
+}
+
+export function buildMobileThreadListLines(input: MobileThreadListLinesInput) {
+  const displayTitleKey = getNormalizedCopyKey(input.displayTitle);
+  const metaTokens: string[] = [];
+  const metaSeen = new Set<string>();
+  appendUniqueCopy(metaTokens, metaSeen, input.project_label);
+  appendUniqueCopy(metaTokens, metaSeen, getRepoTail(input.repo_root));
+
+  const remainingMeta = metaTokens.filter(
+    (value) => getNormalizedCopyKey(value) !== displayTitleKey
+  );
+  const secondaryTokens: string[] = [];
+  const secondarySeen = new Set<string>();
+  appendUniqueCopy(secondaryTokens, secondarySeen, input.preview);
+  appendUniqueCopy(secondaryTokens, secondarySeen, input.statusLabel);
+
+  if (!input.statusLabel && remainingMeta.length > 0) {
+    appendUniqueCopy(secondaryTokens, secondarySeen, remainingMeta.shift() ?? null);
+  }
+
+  return {
+    secondaryLine: secondaryTokens.join(" · ") || null,
+    tertiaryLine: remainingMeta.join(" · ") || null
+  };
 }

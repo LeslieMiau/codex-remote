@@ -106,3 +106,11 @@
 - 宿主级验证通过：`bash init.sh` 在 host context 下以 `errors: 0` 结束；单独用 PTY 会话执行 `./scripts/start-gateway.sh` 与 `./scripts/start-mobile-web.sh` 后，`http://127.0.0.1:8787/api/overview` 与 `http://127.0.0.1:3000/api/overview` 均返回 `thread_count=133`、`shared_state_available=true`、`codex_home=/Users/miau/.codex`；`HEAD /projects` 与 `HEAD /queue` 均返回 `200`。
 - smoke 回归通过：`MOBILE_WEB_SMOKE_SKIP_BROWSER=1 corepack pnpm --filter @codex-remote/mobile-web verify:smoke` 再次通过，说明路由与 compact HTML marker 没被本轮启动链路修改破坏。
 - 说明：这轮仍然是运行态基础设施修复，不额外修改 PLAN；Feature #11 继续保留未完成，因为“真实浏览器里从列表进入线程、打开详情/附件入口”的最终手机端验收仍受当前宿主 Chromium 权限限制。
+
+## Session — 2026-03-29 15:28
+- 完成 Feature #11：在当前宿主环境里使用真实浏览器（Playwright + 本地 Chromium runtime）完成手机端聊天运行态验收，不再停留在无浏览器 smoke。
+- 验收前先清理了陈旧的 3000 `next-server` 进程并重新以 `./scripts/start-mobile-web.sh` 拉起当前实例；确认 `http://127.0.0.1:3000/api/overview` 返回 `threads=140`、`codex_home=/Users/miau/.codex`，`/projects` 与 `/queue` 均返回 `200`。
+- 浏览器链路验证通过：从 `/projects` 进入真实线程页，打开 `More actions` -> `Chat info`，从详情面板成功打开 `Recent chats`，关闭后回到线程，再次进入详情成功打开 `Pick skills`，回到线程后成功从 Composer 打开 `Open attachments`，最后通过线程页返回入口回到 `/projects` 列表。
+- 截图证据已保存在 `output/playwright/feature11v3-projects.png`、`feature11v3-thread.png`、`feature11v3-skills.png`、`feature11v3-attachments.png`、`feature11v3-return-projects.png`；前一轮中间截图 `feature11v2-*` 也保留了 details/recent-chats 辅助证据。
+- 补充观察：`Recent chats` 的关闭行为在真实界面上是“回到线程页”，不是重新回到 `Chat info`；这一点与我最初脚本假设不同，但就产品流来说仍然满足“详情面板里可以进入最近聊天切换器”的验收要求。
+- 当前剩余状态：Phase 5 的 12 个 feature 已全部完成；之后如果还要继续做 mobile-web 体验优化，就不再是这份 PLAN.json 的范围，而是新的任务切片。

@@ -10,6 +10,7 @@
   "scripts": {
     "build": "corepack pnpm -r build",
     "check": "corepack pnpm -r check",
+    "probe:worker": "./scripts/probe-isolated-worker.sh",
     "test": "corepack pnpm -r test",
     "stack:prepare-host": "./scripts/configure-host-network.sh",
     "stack:start": "./scripts/start-stack.sh",

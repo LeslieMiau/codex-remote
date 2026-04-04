@@ -307,6 +307,12 @@ describe("mobile chat list rendering", () => {
     expect(markup).not.toContain("Recovered thread");
     expect(markup).not.toContain("Archived thread");
     expect(markup).not.toContain("Codex is still typing in this chat.");
+    expect(markup).toContain('data-overview-action="inbox"');
+    expect(markup).toContain('aria-label="Inbox"');
+    expect(markup).toContain('data-overview-action="new-chat"');
+    expect(markup).toContain('aria-label="New chat"');
+    expect(markup).not.toContain(">Inbox<");
+    expect(markup).not.toContain(">New chat<");
     expect(extractRowTitles(markup)).toEqual([
       "Input thread",
       "Approval thread",

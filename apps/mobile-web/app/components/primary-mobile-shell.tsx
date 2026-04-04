@@ -48,13 +48,16 @@ function TabIcon({ name }: { name: "projects" | "settings" }) {
       return (
         <svg aria-hidden="true" viewBox="0 0 24 24">
           <path
-            d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm7 3.5-.95-.55a6.5 6.5 0 0 0-.34-.83l.28-1.07-1.55-1.55-1.07.28a6.5 6.5 0 0 0-.83-.34L14 6h-4l-.58 1.01c-.29.08-.57.2-.83.34l-1.07-.28-1.55 1.55.28 1.07c-.14.26-.26.54-.34.83L5 12v4l1.01.58c.08.29.2.57.34.83l-.28 1.07 1.55 1.55 1.07-.28c.26.14.54.26.83.34L10 21h4l.58-1.01c.29-.08.57-.2.83-.34l1.07.28 1.55-1.55-.28-1.07c.14-.26.26-.54.34-.83L19 16Z"
+            d="M5.5 7.5h5m4.5 0h3.5M5.5 12h8m4.5 0h.5m-13.5 4.5h2.5m4.5 0h6.5"
             fill="none"
             stroke="currentColor"
             strokeLinecap="round"
             strokeLinejoin="round"
-            strokeWidth="1.4"
+            strokeWidth="1.8"
           />
+          <circle cx="12.75" cy="7.5" r="1.75" fill="none" stroke="currentColor" strokeWidth="1.8" />
+          <circle cx="15.75" cy="12" r="1.75" fill="none" stroke="currentColor" strokeWidth="1.8" />
+          <circle cx="10.25" cy="16.5" r="1.75" fill="none" stroke="currentColor" strokeWidth="1.8" />
         </svg>
       );
   }

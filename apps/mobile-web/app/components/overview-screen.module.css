@@ -14,6 +14,8 @@
 
 .headerButton,
 .headerButtonPrimary,
+.headerIconButton,
+.headerIconButtonPrimary,
 .noticeAction,
 .emptyAction,
 .clearButton,
@@ -25,6 +27,7 @@
 }
 
 .headerButton,
+.headerIconButton,
 .noticeAction,
 .clearButton,
 .filterButton,
@@ -42,7 +45,8 @@
 }
 
 .headerButtonPrimary,
-.emptyActionPrimary {
+.emptyActionPrimary,
+.headerIconButtonPrimary {
   min-height: 40px;
   display: inline-flex;
   align-items: center;
@@ -55,13 +59,39 @@
   box-shadow: 0 10px 24px rgba(36, 100, 235, 0.22);
 }
 
+.headerIconButton,
+.headerIconButtonPrimary {
+  position: relative;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.headerIconButton {
+  display: inline-grid;
+  place-items: center;
+}
+
+.headerIconButton svg,
+.headerIconButtonPrimary svg {
+  width: 18px;
+  height: 18px;
+}
+
 .headerButtonPrimary:disabled,
-.headerButton:disabled {
+.headerButton:disabled,
+.headerIconButtonPrimary:disabled,
+.headerIconButton:disabled {
   opacity: 0.56;
   cursor: default;
 }
 
 .headerButtonBadge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
   min-width: 18px;
   height: 18px;
   display: grid;

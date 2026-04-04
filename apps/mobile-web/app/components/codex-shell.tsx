@@ -49,13 +49,16 @@ function TabIcon({ name }: { name: "projects" | "settings" }) {
       return (
         <svg aria-hidden="true" viewBox="0 0 24 24">
           <path
-            d="M12 8.25a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5Zm7.25 3.75-.98-.56a6.85 6.85 0 0 0-.35-.86l.28-1.09-1.58-1.58-1.09.28c-.28-.14-.57-.26-.86-.35l-.56-.98h-2.24l-.56.98c-.29.09-.58.21-.86.35l-1.09-.28-1.58 1.58.28 1.09c-.14.28-.26.57-.35.86l-.98.56v2.24l.98.56c.09.29.21.58.35.86l-.28 1.09 1.58 1.58 1.09-.28c.28.14.57.26.86.35l.56.98h2.24l.56-.98c.29-.09.58-.21.86-.35l1.09.28 1.58-1.58-.28-1.09c.14-.28.26-.57.35-.86l.98-.56Z"
+            d="M5.5 7.5h5m4.5 0h3.5M5.5 12h8m4.5 0h.5m-13.5 4.5h2.5m4.5 0h6.5"
             fill="none"
             stroke="currentColor"
             strokeLinecap="round"
             strokeLinejoin="round"
-            strokeWidth="1.4"
+            strokeWidth="1.8"
           />
+          <circle cx="12.75" cy="7.5" r="1.75" fill="none" stroke="currentColor" strokeWidth="1.8" />
+          <circle cx="15.75" cy="12" r="1.75" fill="none" stroke="currentColor" strokeWidth="1.8" />
+          <circle cx="10.25" cy="16.5" r="1.75" fill="none" stroke="currentColor" strokeWidth="1.8" />
         </svg>
       );
   }

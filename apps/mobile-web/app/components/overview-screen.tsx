@@ -112,10 +112,66 @@ function SearchIcon() {
   );
 }
 
+function InboxIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path
+        d="M4.5 6.5h15v8.75l-2.4 2.75h-2.85l-1.4-1.85h-1.7L9.75 18H6.9l-2.4-2.75Z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M4.5 14.5h4.2l1.45 1.8h3.7l1.45-1.8h4.2"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
+function NewChatIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path
+        d="M6 7.5h6.5M6 12h12M6 16.5h8"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <path
+        d="m15.25 5.25 3.5 3.5"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M14 10 18.75 5.25 20.75 7.25 16 12H14Z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
 export function OverviewScreen() {
   const router = useRouter();
   const { locale } = useLocale();
   const isZh = locale === "zh";
+  const inboxLabel = isZh ? "收件箱" : "Inbox";
+  const newChatLabel = isZh ? "新聊天" : "New chat";
   const [overview, setOverview] = useState<CodexOverviewResponse | null>(() =>
     getCachedOverview()
   );
@@ -354,8 +410,14 @@ export function OverviewScreen() {
         title={isZh ? "聊天" : "Chats"}
         actions={
           <div className={styles.headerActions}>
-            <Link className={styles.headerButton} href="/queue">
-              <span>{isZh ? "收件箱" : "Inbox"}</span>
+            <Link
+              aria-label={inboxLabel}
+              className={styles.headerIconButton}
+              data-overview-action="inbox"
+              href="/queue"
+              title={inboxLabel}
+            >
+              <InboxIcon />
               {actionRequiredCount > 0 ? (
                 <span className={styles.headerButtonBadge}>
                   {actionRequiredCount > 9 ? "9+" : actionRequiredCount}
@@ -364,15 +426,18 @@ export function OverviewScreen() {
             </Link>
             {capabilities?.shared_thread_create ? (
               <button
-                className={styles.headerButtonPrimary}
+                aria-label={newChatLabel}
+                className={styles.headerIconButtonPrimary}
+                data-overview-action="new-chat"
                 disabled={isCreatingThread}
                 onClick={() => {
                   setCreateError(null);
                   setIsNewThreadOpen(true);
                 }}
+                title={newChatLabel}
                 type="button"
               >
-                {isZh ? "新聊天" : "New chat"}
+                <NewChatIcon />
               </button>
             ) : null}
           </div>

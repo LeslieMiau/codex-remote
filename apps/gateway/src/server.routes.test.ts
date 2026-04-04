@@ -172,6 +172,7 @@ async function seedPendingApproval(
     thread_id: threadId,
     turn_id: turnId,
     prompt: "Need approval first",
+    collaboration_mode: "default",
     state: "waiting_approval",
     created_at: timestamp,
     updated_at: timestamp
@@ -282,6 +283,7 @@ describe("gateway recovery routes", () => {
       thread_id: "thread_demo",
       turn_id: "turn_demo",
       prompt: "Generate patch",
+      collaboration_mode: "default",
       state: "streaming",
       created_at: timestamp,
       updated_at: timestamp
@@ -360,6 +362,7 @@ describe("gateway recovery routes", () => {
       thread_id: "thread_demo_diff",
       turn_id: "turn_demo_diff",
       prompt: "Update existing file",
+      collaboration_mode: "default",
       state: "streaming",
       created_at: timestamp,
       updated_at: timestamp
@@ -595,6 +598,7 @@ describe("gateway recovery routes", () => {
       thread_id: "thread_active",
       turn_id: "turn_active",
       prompt: "Need more info",
+      collaboration_mode: "default",
       state: "waiting_input",
       created_at: timestamp,
       updated_at: timestamp

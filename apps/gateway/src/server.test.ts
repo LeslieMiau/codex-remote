@@ -440,6 +440,14 @@ describe("gateway server", () => {
         .json()
         .threads.some((thread: { thread_id: string }) => thread.thread_id === threadId)
     ).toBe(true);
+    expect(overview.json().capabilities.collaboration_mode).toBe("plan");
+
+    const capabilities = await runtime.app.inject({
+      method: "GET",
+      url: "/api/capabilities"
+    });
+    expect(capabilities.statusCode).toBe(200);
+    expect(capabilities.json().collaboration_mode).toBe("plan");
 
     const latestMessages = await runtime.app.inject({
       method: "GET",

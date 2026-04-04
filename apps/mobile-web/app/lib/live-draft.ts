@@ -19,6 +19,7 @@ export function buildInlineLiveDraft(input: {
     message_id: `live-draft:${input.threadId}`,
     thread_id: input.threadId,
     timestamp: input.liveState.updated_at,
+    collaboration_mode: "default",
     role: "assistant",
     body: assistantText,
     title: input.locale === "zh" ? "实时草稿" : "Live draft",

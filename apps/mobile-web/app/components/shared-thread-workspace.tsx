@@ -72,6 +72,10 @@ import {
   useLocale
 } from "../lib/locale";
 import {
+  buildApprovalActionOptions,
+  type ApprovalActionOption
+} from "../lib/approval-actions";
+import {
   describeNativeRequestActionLabel,
   describeNativeRequestAttentionLabel,
   describeNativeRequestGateBody,
@@ -104,6 +108,7 @@ import { setStoredLastActiveThread } from "../lib/thread-storage";
 import { isRecoveryFallbackThread } from "../lib/chat-thread-presentation";
 import { DetailShell } from "./detail-shell";
 import { MobileSheet } from "./mobile-sheet";
+import { SharedThreadApprovalActionList } from "./shared-thread-approval-action-list";
 import {
   buildRecentChatsSheetCopy,
   describeThreadTimelineEmptyMessage
@@ -127,7 +132,12 @@ type ConfirmState =
     }
   | {
       approvalId: string;
-      kind: "reject-approval";
+      approved: boolean;
+      confirmationBody: string;
+      confirmationTitle: string;
+      kind: "approval-action";
+      label: string;
+      nativeDecision?: unknown;
     }
   | null;
 
@@ -1100,6 +1110,10 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                   en: "Connecting to shared chat"
                 });
   const hasApprovalSheet = Boolean(leadApproval);
+  const approvalActions = useMemo(
+    () => buildApprovalActionOptions(locale, leadApproval),
+    [leadApproval, locale]
+  );
   const topStatus = error
     ? {
         detail: error,
@@ -1823,21 +1837,51 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
     });
   }
 
-  async function handleApproval(approvalId: string, approved: boolean) {
-    if (!approved) {
+  async function submitApprovalAction(input: {
+    approvalId: string;
+    approved: boolean;
+    confirmed?: boolean;
+    nativeDecision?: unknown;
+  }) {
+    await runMutation(async () => {
+      await resolveApproval(input.approvalId, input.approved, {
+        confirmed: input.confirmed,
+        nativeDecision: input.nativeDecision
+      });
+    }, input.approved
+      ? localize(locale, {
+          zh: "批准请求已处理，Codex 会继续执行。",
+          en: "The approval was handled and Codex can continue."
+        })
+      : localize(locale, {
+          zh: "批准请求已拒绝。",
+          en: "The approval request was declined."
+        }));
+  }
+
+  function handleApprovalAction(action: ApprovalActionOption) {
+    if (!leadApproval) {
+      return;
+    }
+
+    if (action.confirmationTitle && action.confirmationBody) {
       setConfirmState({
-        approvalId,
-        kind: "reject-approval"
+        approvalId: leadApproval.approval_id,
+        approved: action.approved,
+        confirmationBody: action.confirmationBody,
+        confirmationTitle: action.confirmationTitle,
+        kind: "approval-action",
+        label: action.label,
+        nativeDecision: action.nativeDecision
       });
       return;
     }
 
-    await runMutation(async () => {
-      await resolveApproval(approvalId, approved);
-    }, localize(locale, {
-      zh: "批准请求已处理，Codex 会继续执行。",
-      en: "The approval was handled and Codex can continue."
-    }));
+    void submitApprovalAction({
+      approvalId: leadApproval.approval_id,
+      approved: action.approved,
+      nativeDecision: action.nativeDecision
+    });
   }
 
   async function handleConfirmAction() {
@@ -1860,13 +1904,13 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
           en: "The current run was stopped."
         }));
         return;
-      case "reject-approval":
-        await runMutation(async () => {
-          await resolveApproval(nextConfirmState.approvalId, false);
-        }, localize(locale, {
-          zh: "批准请求已拒绝。",
-          en: "The approval request was rejected."
-        }));
+      case "approval-action":
+        await submitApprovalAction({
+          approvalId: nextConfirmState.approvalId,
+          approved: nextConfirmState.approved,
+          confirmed: nextConfirmState.approved ? true : undefined,
+          nativeDecision: nextConfirmState.nativeDecision
+        });
         return;
     }
   }
@@ -2444,13 +2488,17 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
               {localize(locale, { zh: "取消", en: "Cancel" })}
             </button>
             <button
-              className="danger-button"
+              className={
+                confirmState?.kind === "approval-action" && confirmState.approved
+                  ? "primary-button"
+                  : "danger-button"
+              }
               onClick={() => void handleConfirmAction()}
               type="button"
             >
               {confirmState?.kind === "interrupt"
                 ? localize(locale, { zh: "停止运行", en: "Stop run" })
-                : localize(locale, { zh: "拒绝请求", en: "Reject request" })}
+                : confirmState?.label ?? localize(locale, { zh: "确认", en: "Confirm" })}
             </button>
           </>
         }
@@ -2459,7 +2507,8 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
         title={
           confirmState?.kind === "interrupt"
             ? localize(locale, { zh: "停止当前运行？", en: "Stop the current run?" })
-            : localize(locale, { zh: "拒绝这条批准请求？", en: "Reject this approval request?" })
+            : confirmState?.confirmationTitle ??
+              localize(locale, { zh: "确认这条批准请求？", en: "Confirm this approval request?" })
         }
       >
         <p className="codex-inline-note">
@@ -2468,9 +2517,10 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                 zh: "Codex 会停止当前这轮运行，但这条聊天和现有输出会继续保留。",
                 en: "Codex will stop the current run, but this chat and its current output will remain available."
               })
-            : localize(locale, {
-                zh: "拒绝后，Codex 不会继续执行这条需要批准的操作。",
-                en: "Rejecting means Codex will not continue with this approval-gated action."
+            : confirmState?.confirmationBody ??
+              localize(locale, {
+                zh: "请确认这次审批操作。",
+                en: "Confirm this approval action."
               })}
         </p>
       </MobileSheet>
@@ -2953,30 +3003,9 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
       <MobileSheet
         eyebrow={localize(locale, { zh: "请求", en: "Request" })}
         footer={
-          leadApproval?.recoverable ? (
-            <>
-              <button
-                className="secondary-button"
-                disabled={isMutating}
-                onClick={() => void handleApproval(leadApproval.approval_id, false)}
-                type="button"
-              >
-                {localize(locale, { zh: "拒绝", en: "Reject" })}
-              </button>
-              <button
-                className="primary-button"
-                disabled={isMutating}
-                onClick={() => void handleApproval(leadApproval.approval_id, true)}
-                type="button"
-              >
-                {localize(locale, { zh: "批准", en: "Approve" })}
-              </button>
-            </>
-          ) : (
-            <button className="secondary-button" onClick={closeApprovalSheet} type="button">
-              {localize(locale, { zh: "关闭", en: "Close" })}
-            </button>
-          )
+          <button className="secondary-button" onClick={closeApprovalSheet} type="button">
+            {localize(locale, { zh: "关闭", en: "Close" })}
+          </button>
         }
         open={hasApprovalSheet && approvalSheetOpen}
         onClose={closeApprovalSheet}
@@ -3014,6 +3043,14 @@ export function SharedThreadWorkspace({ threadId }: SharedThreadWorkspaceProps) 
                     en: "This request can no longer be recovered from mobile. Finish it from desktop Codex app."
                   })}
             </p>
+
+            {leadApproval.recoverable ? (
+              <SharedThreadApprovalActionList
+                actions={approvalActions}
+                isMutating={isMutating}
+                onSelectAction={handleApprovalAction}
+              />
+            ) : null}
           </div>
         ) : null}
         </MobileSheet>

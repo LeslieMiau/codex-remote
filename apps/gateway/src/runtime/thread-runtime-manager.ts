@@ -201,16 +201,13 @@ export class ThreadRuntimeManager {
       thread_id: thread.thread_id,
       turn_id: createUlid(),
       prompt: input.prompt,
+      collaboration_mode: input.collaboration_mode ?? "default",
       state: "queued",
       created_at: timestamp,
       updated_at: timestamp
     };
 
-    const savedTurn = this.store.saveTurn(
-      Object.assign(turn, {
-        collaboration_mode: input.collaboration_mode
-      }) as TurnRecord
-    );
+    const savedTurn = this.store.saveTurn(turn);
     const savedThread = this.store.saveThread({
       ...appendPendingTurn(thread, savedTurn.turn_id),
       state: thread.state === "archived" ? thread.state : "ready",
@@ -551,7 +548,8 @@ export class ThreadRuntimeManager {
       timestamp,
       eventType: "turn.started",
       payload: {
-        worktree_path: worktreePath
+        worktree_path: worktreePath,
+        collaboration_mode: startedTurn.collaboration_mode
       }
     });
 
@@ -636,7 +634,8 @@ export class ThreadRuntimeManager {
             message: input.message,
             resumed: input.resumed ?? false,
             step: input.step,
-            turn_state: updatedTurn.state
+            turn_state: updatedTurn.state,
+            collaboration_mode: updatedTurn.collaboration_mode
           }
         });
       },
@@ -696,6 +695,7 @@ export class ThreadRuntimeManager {
             thread_id: thread.thread_id,
             turn_id: turnId,
             prompt: "",
+            collaboration_mode: "default",
             state: "waiting_approval",
             created_at: timestamp,
             updated_at: timestamp
@@ -768,6 +768,7 @@ export class ThreadRuntimeManager {
             thread_id: thread.thread_id,
             turn_id: turnId,
             prompt: "",
+            collaboration_mode: "default",
             state: "waiting_input",
             created_at: timestamp,
             updated_at: timestamp

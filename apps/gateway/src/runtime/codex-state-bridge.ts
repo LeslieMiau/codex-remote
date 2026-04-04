@@ -706,7 +706,7 @@ export class CodexStateBridge {
     return {
       adapter_kind:
         this.options.adapterKind === "codex-app-server" ? "codex-app-server" : undefined,
-      collaboration_mode: "default",
+      collaboration_mode: canControlSharedThreads ? "plan" : "default",
       codex_home: this.codexHome,
       shared_state_available: sharedStateAvailable,
       degraded: !sharedStateAvailable,
@@ -989,6 +989,7 @@ export class CodexStateBridge {
           role: "assistant",
           body: undefined,
           turn_id: item.turn_id,
+          collaboration_mode: item.collaboration_mode,
           origin: item.origin,
           status: item.status,
           action_required: false,
@@ -1020,6 +1021,7 @@ export class CodexStateBridge {
           body: item.body,
           title: item.title,
           turn_id: item.turn_id,
+          collaboration_mode: item.collaboration_mode,
           origin: item.origin,
           action_required: false,
           details: []
@@ -1041,6 +1043,7 @@ export class CodexStateBridge {
           body: item.body,
           title: item.title,
           turn_id: item.turn_id,
+          collaboration_mode: item.collaboration_mode,
           origin: item.origin,
           status: item.status,
           approval_id: item.approval_id,
@@ -1134,6 +1137,9 @@ export class CodexStateBridge {
     const publicThreadId = this.getPublicThreadId(nativeThread.id);
 
     for (const approval of this.listNativeApprovals(publicThreadId)) {
+      const approvalTurnMode = approval.turn_id
+        ? this.options.store.getTurn(approval.turn_id)?.collaboration_mode ?? "default"
+        : "default";
       items.push({
         item_id: `approval-${approval.approval_id}`,
         thread_id: publicThreadId,
@@ -1147,6 +1153,7 @@ export class CodexStateBridge {
         body: approval.reason,
         status: approval.status,
         turn_id: approval.turn_id,
+        collaboration_mode: approvalTurnMode,
         approval_id: approval.approval_id,
         action_required: approval.status === "requested",
         mono: false
@@ -1154,6 +1161,9 @@ export class CodexStateBridge {
     }
 
     for (const patch of this.options.store.listPatches(publicThreadId)) {
+      const patchTurnMode = patch.turn_id
+        ? this.options.store.getTurn(patch.turn_id)?.collaboration_mode ?? "default"
+        : "default";
       items.push({
         item_id: `patch-${patch.patch_id}`,
         thread_id: publicThreadId,
@@ -1164,6 +1174,7 @@ export class CodexStateBridge {
         body: patch.files.map((file) => file.path).join(", "),
         status: patch.status,
         turn_id: patch.turn_id,
+        collaboration_mode: patchTurnMode,
         patch_id: patch.patch_id,
         action_required: patch.status !== "applied" && patch.status !== "discarded",
         mono: false
@@ -1224,6 +1235,7 @@ export class CodexStateBridge {
                 kind: "user_message",
                 title: "You",
                 body: normalizedMessage,
+                collaboration_mode: "default",
                 action_required: false,
                 mono: false
               });
@@ -1254,6 +1266,7 @@ export class CodexStateBridge {
                 kind: "assistant_message",
                 title: phase === "commentary" ? "Codex progress" : "Codex",
                 body: message.trim(),
+                collaboration_mode: "default",
                 phase,
                 action_required: false,
                 mono: false
@@ -1300,6 +1313,7 @@ export class CodexStateBridge {
                 ? "Codex progress"
                 : "Codex",
             body: assistantResponseMessage.text,
+            collaboration_mode: "default",
             phase: assistantResponseMessage.phase,
             action_required: false,
             mono: false
@@ -1336,6 +1350,7 @@ export class CodexStateBridge {
             kind: "tool_call",
             title: humanizeToolName(payload.name),
             body: rawInput ? truncate(rawInput) : undefined,
+            collaboration_mode: "default",
             action_required: false,
             mono: Boolean(rawInput)
           });
@@ -1362,6 +1377,7 @@ export class CodexStateBridge {
             kind: "tool_result",
             title: `${humanizeToolName(toolName)} output`,
             body: output ? truncate(output, 500) : "Tool completed.",
+            collaboration_mode: "default",
             action_required: false,
             mono: true
           });

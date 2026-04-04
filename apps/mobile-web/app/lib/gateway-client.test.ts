@@ -7,6 +7,7 @@ import {
   getCodexMessagesLatest,
   getCodexOverview,
   getThreadSkills,
+  resolveApproval,
   subscribeToThreadStream,
   updateCodexSharedSettings,
   uploadSharedThreadImage,
@@ -253,6 +254,78 @@ describe("uploadSharedThreadImage", () => {
     const formData = requestInit?.body;
     expect(formData).toBeInstanceOf(FormData);
     expect((formData as FormData).get("file")).toBe(file);
+  });
+});
+
+describe("resolveApproval", () => {
+  it("omits confirmed by default so approval confirmation stays explicit", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          approval: {
+            approval_id: "approval-1",
+            status: "approved"
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json"
+          }
+        }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await resolveApproval("approval-1", true, {
+      nativeDecision: {
+        acceptForSession: true
+      }
+    });
+
+    const requestInit = (fetchMock.mock.calls as unknown as Array<
+      [string, RequestInit | undefined]
+    >)[0]?.[1];
+    expect(requestInit?.method).toBe("POST");
+    expect(requestInit?.body).toBeDefined();
+    expect(JSON.parse(String(requestInit?.body))).toMatchObject({
+      actor_id: "mobile_web",
+      native_decision: {
+        acceptForSession: true
+      }
+    });
+    expect(JSON.parse(String(requestInit?.body))).not.toHaveProperty("confirmed");
+  });
+
+  it("sends confirmed when the caller explicitly requests it", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          approval: {
+            approval_id: "approval-1",
+            status: "approved"
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json"
+          }
+        }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await resolveApproval("approval-1", true, {
+      confirmed: true
+    });
+
+    const requestInit = (fetchMock.mock.calls as unknown as Array<
+      [string, RequestInit | undefined]
+    >)[0]?.[1];
+    expect(JSON.parse(String(requestInit?.body))).toMatchObject({
+      confirmed: true
+    });
   });
 });
 

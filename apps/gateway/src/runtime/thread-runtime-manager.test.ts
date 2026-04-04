@@ -183,7 +183,8 @@ describe("ThreadRuntimeManager", () => {
       "Generated: recovery loop"
     );
 
-    const eventTypes = store.listEvents("thread_demo", 0).map((event) => event.event_type);
+    const events = store.listEvents("thread_demo", 0);
+    const eventTypes = events.map((event) => event.event_type);
     expect(eventTypes).toEqual(
       expect.arrayContaining([
         "turn.queued",
@@ -192,6 +193,12 @@ describe("ThreadRuntimeManager", () => {
         "patch.ready",
         "turn.completed"
       ])
+    );
+    expect(events.find((event) => event.event_type === "turn.started")?.payload).toMatchObject({
+      collaboration_mode: "default"
+    });
+    expect(events.find((event) => event.event_type === "approval.required")?.payload).not.toHaveProperty(
+      "collaboration_mode"
     );
     expect(store.getLiveState("thread_demo")?.status).toBe("completed");
   });

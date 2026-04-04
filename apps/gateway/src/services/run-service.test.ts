@@ -75,6 +75,7 @@ async function createHarness() {
       turn_id: "turn_demo",
       thread_id: "thread_demo",
       prompt: "continue",
+      collaboration_mode: "default",
       state: "started",
       created_at: timestamp,
       updated_at: timestamp

@@ -59,6 +59,41 @@ async function createBridgeHarness() {
 }
 
 describe("CodexStateBridge", () => {
+  it("reports plan collaboration mode when shared app-server state is available", async () => {
+    const { bridge, store } = await createBridgeHarness();
+    await fs.writeFile(path.join((bridge as unknown as { codexHome: string }).codexHome, "state_5.sqlite"), "");
+    await fs.writeFile(
+      path.join((bridge as unknown as { codexHome: string }).codexHome, "session_index.jsonl"),
+      ""
+    );
+
+    await expect(bridge.getCapabilities()).resolves.toMatchObject({
+      collaboration_mode: "plan",
+      shared_state_available: true,
+      shared_thread_create: true,
+      run_start: true,
+      live_follow_up: true
+    });
+
+    await bridge.stop();
+    store.close();
+  });
+
+  it("falls back to default collaboration mode when shared state is unavailable", async () => {
+    const { bridge, store } = await createBridgeHarness();
+
+    await expect(bridge.getCapabilities()).resolves.toMatchObject({
+      collaboration_mode: "default",
+      shared_state_available: false,
+      shared_thread_create: false,
+      run_start: false,
+      live_follow_up: false
+    });
+
+    await bridge.stop();
+    store.close();
+  });
+
   it("keeps a freshly created shared thread while native discovery catches up", async () => {
     const { bridge, repoRoot, store } = await createBridgeHarness();
     const timestamp = nowIso();

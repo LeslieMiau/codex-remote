@@ -10,6 +10,7 @@ import {
   TurnIdSchema
 } from "./ids";
 import {
+  CollaborationModeKindSchema,
   IsoTimestampSchema,
   StreamSequenceSchema,
   UnknownRecordSchema,
@@ -248,6 +249,7 @@ export const TurnRecordSchema = z.object({
   thread_id: ThreadIdSchema,
   turn_id: TurnIdSchema,
   prompt: z.string(),
+  collaboration_mode: CollaborationModeKindSchema.default("default"),
   state: TurnStateSchema,
   summary: z.string().optional(),
   created_at: IsoTimestampSchema,

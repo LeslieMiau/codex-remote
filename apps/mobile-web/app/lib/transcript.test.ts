@@ -16,6 +16,7 @@ describe("transcript", () => {
             role: "assistant",
             thread_id: "thread_1",
             timestamp: "2026-03-16T09:00:02.000Z",
+            collaboration_mode: "default",
             origin: "native_confirmed",
             details: [],
             action_required: false
@@ -27,6 +28,7 @@ describe("transcript", () => {
             role: "user",
             thread_id: "thread_1",
             timestamp: "2026-03-16T09:00:01.000Z",
+            collaboration_mode: "default",
             origin: "native_confirmed",
             details: [],
             action_required: false
@@ -36,6 +38,7 @@ describe("transcript", () => {
             role: "assistant",
             thread_id: "thread_1",
             timestamp: "2026-03-16T09:00:02.000Z",
+            collaboration_mode: "default",
             origin: "native_confirmed",
             body: "patched",
             details: [],
@@ -58,6 +61,7 @@ describe("transcript", () => {
             role: "user",
             thread_id: "thread_1",
             timestamp: "2026-03-16T09:00:01.000Z",
+            collaboration_mode: "default",
             origin: "native_confirmed",
             details: [],
             action_required: false
@@ -86,6 +90,7 @@ describe("transcript", () => {
             role: "assistant",
             thread_id: "thread_1",
             timestamp: "2026-03-16T09:00:02.000Z",
+            collaboration_mode: "default",
             origin: "native_confirmed",
             details: [],
             action_required: false

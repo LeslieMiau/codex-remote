@@ -13,6 +13,7 @@ function buildMessage(input: {
   return {
     action_required: false,
     body: input.body ?? input.message_id,
+    collaboration_mode: "default" as const,
     details: (input.details ?? []).map((detail, index) => ({
       ...detail,
       detail_id: `${input.message_id}:detail:${index}`,

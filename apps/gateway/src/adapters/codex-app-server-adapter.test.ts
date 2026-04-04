@@ -111,6 +111,7 @@ async function runAdapterTurn(input: {
             thread_id: "thread_adapter",
             turn_id: input.turnId,
             prompt: input.prompt ?? "Create a file",
+            collaboration_mode: "default",
             state: "started",
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()

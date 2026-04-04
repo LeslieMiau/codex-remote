@@ -80,6 +80,7 @@ export class GatewayFallbackProjection {
     const nativeRequests = this.repositories.nativeRequests.listByThread(thread.thread_id);
     const patches = this.repositories.patches.listByThread(thread.thread_id);
     const events = this.repositories.events.listByThread(thread.thread_id, 0, 2_000);
+    const turnModes = new Map(turns.map((turn) => [turn.turn_id, turn.collaboration_mode] as const));
 
     const items = [
       ...turns.map((turn) => ({
@@ -91,6 +92,7 @@ export class GatewayFallbackProjection {
         title: "You",
         body: turn.prompt,
         turn_id: turn.turn_id,
+        collaboration_mode: turn.collaboration_mode,
         action_required: false,
         mono: false
       })),
@@ -114,6 +116,12 @@ export class GatewayFallbackProjection {
               ? String(event.payload.summary)
               : undefined,
         turn_id: event.turn_id,
+        collaboration_mode:
+          event.turn_id && turnModes.has(event.turn_id)
+            ? turnModes.get(event.turn_id) ?? "default"
+            : event.payload.collaboration_mode === "plan"
+              ? "plan"
+              : "default",
         action_required: false,
         mono: false
       })),
@@ -130,6 +138,10 @@ export class GatewayFallbackProjection {
         body: approval.reason,
         status: approval.status,
         turn_id: approval.turn_id,
+        collaboration_mode:
+          approval.turn_id && turnModes.has(approval.turn_id)
+            ? turnModes.get(approval.turn_id) ?? "default"
+            : "default",
         approval_id: approval.approval_id,
         action_required: approval.status === "requested",
         mono: false
@@ -144,6 +156,10 @@ export class GatewayFallbackProjection {
         body: patch.files.map((file) => file.path).join(", "),
         status: patch.status,
         turn_id: patch.turn_id,
+        collaboration_mode:
+          patch.turn_id && turnModes.has(patch.turn_id)
+            ? turnModes.get(patch.turn_id) ?? "default"
+            : "default",
         patch_id: patch.patch_id,
         action_required: patch.status !== "applied" && patch.status !== "discarded",
         mono: false
@@ -184,6 +200,7 @@ export class GatewayFallbackProjection {
       body: item.body,
       title: item.title,
       turn_id: item.turn_id,
+      collaboration_mode: item.collaboration_mode,
       origin: item.origin,
       status: "status" in item ? item.status : undefined,
       approval_id: "approval_id" in item ? item.approval_id : undefined,

@@ -90,6 +90,7 @@ describe("GatewayReadModelService", () => {
       thread_id: "thread_demo",
       turn_id: "turn_demo",
       prompt: "Need approval",
+      collaboration_mode: "plan",
       state: "waiting_approval",
       created_at: timestamp,
       updated_at: timestamp
@@ -109,12 +110,81 @@ describe("GatewayReadModelService", () => {
     });
 
     const thread = await service.getThread("thread_demo");
+    const timeline = await service.getTimeline("thread_demo");
+    const transcript = await service.getTranscriptPage({
+      threadId: "thread_demo",
+      limit: 10
+    });
 
     expect(thread?.state).toBe("waiting_approval");
     expect(thread?.pending_approvals).toBe(1);
     expect(thread?.project_label).toBe("codex-remote");
     expect(thread?.degraded).toBe(true);
     expect(thread?.degraded_reason).toBe("recovery_fallback");
+
+    const detail = store!.getThreadDetail("thread_demo");
+    expect(detail?.turns[0]?.collaboration_mode).toBe("plan");
+    expect(timeline?.items[0]?.turn_id).toBe("turn_demo");
+    expect(timeline?.items[0]?.collaboration_mode).toBe("plan");
+    expect(transcript?.items[0]?.turn_id).toBe("turn_demo");
+    expect(transcript?.items[0]?.collaboration_mode).toBe("plan");
+  });
+
+  it("defaults legacy turn records to default collaboration mode", async () => {
+    const service = await createService();
+    const timestamp = nowIso();
+
+    store!.saveProject({
+      project_id: "project_demo",
+      repo_root: "/repo/codex-remote",
+      created_at: timestamp,
+      updated_at: timestamp
+    });
+    store!.saveThread({
+      project_id: "project_demo",
+      thread_id: "thread_demo",
+      state: "completed",
+      active_turn_id: null,
+      pending_turn_ids: [],
+      pending_approval_ids: [],
+      adapter_kind: "codex-app-server",
+      last_stream_seq: 0,
+      created_at: timestamp,
+      updated_at: timestamp
+    });
+
+    const database = (
+      store! as unknown as {
+        database: {
+          prepare(sql: string): { run(...args: unknown[]): void };
+        };
+      }
+    ).database;
+    database
+      .prepare(
+        `INSERT INTO turns(turn_id, project_id, thread_id, prompt, state, summary, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        "turn_legacy",
+        "project_demo",
+        "thread_demo",
+        "Legacy prompt",
+        "completed",
+        null,
+        timestamp,
+        timestamp
+      );
+
+    const transcript = await service.getTranscriptPage({
+      threadId: "thread_demo",
+      limit: 10
+    });
+
+    expect(transcript?.items[0]?.turn_id).toBe("turn_legacy");
+    expect(transcript?.items[0]?.collaboration_mode).toBe("default");
+    const detail = store!.getThreadDetail("thread_demo");
+    expect(detail?.turns[0]?.collaboration_mode).toBe("default");
   });
 
   it("builds fallback transcripts with live state when native state is unavailable", async () => {
@@ -144,6 +214,7 @@ describe("GatewayReadModelService", () => {
       thread_id: "thread_demo",
       turn_id: "turn_demo",
       prompt: "Hello",
+      collaboration_mode: "default",
       state: "completed",
       created_at: timestamp,
       updated_at: timestamp

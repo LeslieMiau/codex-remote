@@ -482,7 +482,7 @@ export async function resolveApproval(
     body: JSON.stringify({
       actor_id: "mobile_web",
       request_id: requestId(approved ? "approve" : "reject"),
-      confirmed: options?.confirmed ?? approved,
+      confirmed: options?.confirmed,
       native_decision: options?.nativeDecision
     })
   });

@@ -107,6 +107,8 @@ function mapTurn(row: Record<string, unknown>): TurnRecord {
     thread_id: String(row.thread_id),
     turn_id: String(row.turn_id),
     prompt: String(row.prompt),
+    collaboration_mode:
+      row.collaboration_mode === "plan" ? "plan" : "default",
     state: row.state as TurnRecord["state"],
     summary: row.summary ? String(row.summary) : undefined,
     created_at: String(row.created_at),

@@ -55,6 +55,62 @@ function translateDetailKind(locale: Locale, kind: string) {
   }
 }
 
+function summarizeDetailBreakdown(
+  locale: Locale,
+  details: MessageGroup["messages"][number]["details"]
+) {
+  const counts = {
+    process: 0,
+    reads: 0,
+    updates: 0
+  };
+
+  for (const detail of details) {
+    switch (detail.kind) {
+      case "thinking":
+      case "editing":
+      case "testing":
+        counts.process += 1;
+        break;
+      case "tool_call":
+      case "tool_result":
+        counts.reads += 1;
+        break;
+      default:
+        counts.updates += 1;
+        break;
+    }
+  }
+
+  const parts: string[] = [];
+  if (counts.process > 0) {
+    parts.push(
+      localize(locale, {
+        zh: `${counts.process} 条过程`,
+        en: `${counts.process} steps`
+      })
+    );
+  }
+  if (counts.reads > 0) {
+    parts.push(
+      localize(locale, {
+        zh: `${counts.reads} 条读取`,
+        en: `${counts.reads} reads`
+      })
+    );
+  }
+  if (counts.updates > 0) {
+    parts.push(
+      localize(locale, {
+        zh: `${counts.updates} 条状态`,
+        en: `${counts.updates} updates`
+      })
+    );
+  }
+
+  return parts.join(" · ");
+}
+
 function roleLabel(locale: Locale, role: MessageGroup["role"]) {
   switch (role) {
     case "assistant":
@@ -102,23 +158,36 @@ function MessageDetails({
 
   return (
     <details className={styles.messageDetails}>
-      <summary>
-        {localize(locale, {
-          zh: `查看过程与读取 (${message.details.length})`,
-          en: `Show process and reads (${message.details.length})`
-        })}
+      <summary className={styles.messageDetailsSummary}>
+        <span className={styles.messageDetailsSummaryLabel}>
+          {localize(locale, {
+            zh: "过程与读取",
+            en: "Process and reads"
+          })}
+        </span>
+        <span className={styles.messageDetailsSummaryMeta}>
+          {summarizeDetailBreakdown(locale, message.details) ||
+            localize(locale, {
+              zh: `${message.details.length} 条详情`,
+              en: `${message.details.length} details`
+            })}
+        </span>
       </summary>
       <div className={styles.detailList}>
         {message.details.map((detail) => (
-          <details
+          <article
             key={detail.detail_id ?? `${message.message_id}:${detail.kind}:${detail.timestamp ?? "detail"}`}
             className={styles.detailDisclosure}
           >
-            <summary>
-              <span>{translateDetailKind(locale, detail.kind)}</span>
-              <strong className={styles.detailTitle}>{detail.title}</strong>
-              <span>{detail.timestamp ? formatClockTime(locale, detail.timestamp) : null}</span>
-            </summary>
+            <div className={styles.detailDisclosureSummary}>
+              <span className={styles.detailKindPill}>
+                {translateDetailKind(locale, detail.kind)}
+              </span>
+              <span className={styles.detailDisclosureTime}>
+                {detail.timestamp ? formatClockTime(locale, detail.timestamp) : null}
+              </span>
+            </div>
+            {detail.title ? <strong className={styles.detailTitle}>{detail.title}</strong> : null}
             {detail.body ? (
               detail.mono ? (
                 <pre className={styles.detailMono}>{detail.body}</pre>
@@ -126,7 +195,7 @@ function MessageDetails({
                 <p className={styles.detailBody}>{detail.body}</p>
               )
             ) : null}
-          </details>
+          </article>
         ))}
       </div>
     </details>
@@ -154,15 +223,30 @@ function GroupItem({
   if (isSystem) {
     const leadMessage = visibleMessages[visibleMessages.length - 1] ?? group.messages[group.messages.length - 1];
     const leadBody = renderMessageBody(leadMessage);
+    const systemBadge = leadMessage.approval_id
+      ? localize(locale, { zh: "批准请求", en: "Approval" })
+      : leadMessage.patch_id
+        ? localize(locale, { zh: "变更审查", en: "Review" })
+        : localize(locale, { zh: "系统更新", en: "System update" });
 
     return (
-      <article className={styles.systemNotice}>
-        <div className={styles.systemNoticeHeader}>
-          <div className={styles.systemNoticeCopy}>
-            <strong>{leadMessage.title || roleLabel(locale, group.role)}</strong>
-            {leadBody ? <p>{leadBody}</p> : null}
-          </div>
+      <article
+        className={[
+          styles.systemNotice,
+          leadMessage.approval_id ? styles.systemNoticeWarning : ""
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        <div className={styles.auxCardMetaRow}>
+          <span className={styles.auxCardBadge}>{systemBadge}</span>
           <span className={styles.systemNoticeTime}>{formatClockTime(locale, group.ended_at)}</span>
+        </div>
+        <div className={styles.systemNoticeCopy}>
+          <div className={styles.systemNoticeHeader}>
+            <strong>{leadMessage.title || roleLabel(locale, group.role)}</strong>
+          </div>
+          {leadBody ? <p>{leadBody}</p> : null}
         </div>
 
         {leadMessage.approval_id ? (
@@ -201,9 +285,9 @@ function GroupItem({
   }
 
   return (
-    <article
-      className={[
-        styles.messageGroup,
+      <article
+        className={[
+          styles.messageGroup,
         isUser ? styles.messageGroupUser : "",
         group.role === "assistant" ? styles.messageGroupAssistant : ""
       ]
@@ -212,15 +296,24 @@ function GroupItem({
     >
       <div className={styles.groupStack}>
         <div className={styles.groupBody}>
-          {visibleMessages.map((message) => {
+          {visibleMessages.map((message, index) => {
             const body = renderMessageBody(message);
             const hasBody = Boolean(body.trim());
+            const bubblePositionClass =
+              visibleMessages.length === 1
+                ? styles.bubbleSolo
+                : index === 0
+                  ? styles.bubbleStart
+                  : index === visibleMessages.length - 1
+                    ? styles.bubbleEnd
+                    : styles.bubbleMiddle;
 
             return (
               <div
                 key={message.message_id}
                 className={[
                   styles.bubble,
+                  bubblePositionClass,
                   isUser ? styles.bubbleUser : "",
                   isSystem ? styles.bubbleSystem : "",
                   message.is_live_draft ? styles.bubbleLive : ""
@@ -303,7 +396,17 @@ export function ChatTimeline({
             );
           case "pending_send":
             return (
-              <article key={item.id} className={styles.pendingSend}>
+              <article key={item.id} className={[styles.pendingSend, styles.auxCard].join(" ")}>
+                <div className={styles.auxCardMetaRow}>
+                  <span className={styles.auxCardBadge}>
+                    {item.pending_send.status === "failed"
+                      ? localize(locale, { zh: "发送失败", en: "Failed" })
+                      : localize(locale, { zh: "发送中", en: "Sending" })}
+                  </span>
+                  <span className={styles.pendingTime}>
+                    {formatClockTime(locale, item.pending_send.created_at)}
+                  </span>
+                </div>
                 <p className={styles.messageText}>{item.pending_send.body}</p>
                 {item.pending_send.skills.length > 0 || item.pending_send.images.length > 0 ? (
                   <div className={styles.pendingMeta}>
@@ -364,6 +467,7 @@ export function ChatTimeline({
                 key={item.id}
                 className={[
                   styles.activityStrip,
+                  styles.auxCard,
                   item.tone === "danger" ? styles.activityStripDanger : "",
                   item.tone === "success" ? styles.activityStripSuccess : "",
                   item.tone === "warning" ? styles.activityStripWarning : "",
@@ -372,6 +476,22 @@ export function ChatTimeline({
                   .filter(Boolean)
                   .join(" ")}
               >
+                <div className={styles.auxCardMetaRow}>
+                  <span className={styles.auxCardBadge}>
+                    {item.live_state.awaiting_native_commit
+                      ? localize(locale, {
+                          zh: "等待确认",
+                          en: "Syncing"
+                        })
+                      : localize(locale, {
+                          zh: "实时状态",
+                          en: "Live"
+                        })}
+                  </span>
+                  <span className={styles.activityStripTime}>
+                    {formatClockTime(locale, item.live_state.updated_at)}
+                  </span>
+                </div>
                 <div className={styles.activityStripCopy}>
                   <strong>
                     {item.live_state.awaiting_native_commit
@@ -392,32 +512,42 @@ export function ChatTimeline({
                     )}
                   </p>
                 </div>
-                <span className={styles.activityStripTime}>
-                  {formatClockTime(locale, item.live_state.updated_at)}
-                </span>
                 {item.live_state.details.length > 0 ? (
                   <details className={styles.messageDetails}>
-                    <summary>
-                      {localize(locale, {
-                        zh: `查看过程与读取 (${item.live_state.details.length})`,
-                        en: `Show process and reads (${item.live_state.details.length})`
-                      })}
+                    <summary className={styles.messageDetailsSummary}>
+                      <span className={styles.messageDetailsSummaryLabel}>
+                        {localize(locale, {
+                          zh: "过程与读取",
+                          en: "Process and reads"
+                        })}
+                      </span>
+                      <span className={styles.messageDetailsSummaryMeta}>
+                        {summarizeDetailBreakdown(locale, item.live_state.details) ||
+                          localize(locale, {
+                            zh: `${item.live_state.details.length} 条详情`,
+                            en: `${item.live_state.details.length} details`
+                          })}
+                      </span>
                     </summary>
                     <div className={styles.detailList}>
                       {item.live_state.details.map((detail, index) => (
-                        <details
+                        <article
                           key={detail.detail_id ?? `${item.id}:${detail.kind}:${index}`}
                           className={styles.detailDisclosure}
                         >
-                          <summary>
-                            <span>{translateDetailKind(locale, detail.kind)}</span>
-                            <strong className={styles.detailTitle}>{detail.title}</strong>
-                            <span>
+                          <div className={styles.detailDisclosureSummary}>
+                            <span className={styles.detailKindPill}>
+                              {translateDetailKind(locale, detail.kind)}
+                            </span>
+                            <span className={styles.detailDisclosureTime}>
                               {detail.timestamp
                                 ? formatClockTime(locale, detail.timestamp)
                                 : null}
                             </span>
-                          </summary>
+                          </div>
+                          {detail.title ? (
+                            <strong className={styles.detailTitle}>{detail.title}</strong>
+                          ) : null}
                           {detail.body ? (
                             detail.mono ? (
                               <pre className={styles.detailMono}>{detail.body}</pre>
@@ -425,7 +555,7 @@ export function ChatTimeline({
                               <p className={styles.detailBody}>{detail.body}</p>
                             )
                           ) : null}
-                        </details>
+                        </article>
                       ))}
                     </div>
                   </details>

@@ -162,8 +162,8 @@
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px 0 14px;
+  gap: 10px;
+  padding: 12px 0 18px;
 }
 
 .historyNote {
@@ -187,7 +187,7 @@
 .dateDivider {
   display: flex;
   justify-content: center;
-  margin: 2px 0 6px;
+  margin: 4px 0 2px;
 }
 
 .dateDivider span {
@@ -202,7 +202,7 @@
 
 .messageGroup {
   display: flex;
-  max-width: min(100%, 78%);
+  max-width: min(100%, 82%);
 }
 
 .messageGroupAssistant {
@@ -217,25 +217,53 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 
 .groupBody {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .bubble {
   min-width: 0;
-  padding: 10px 12px;
-  border-radius: 12px 12px 12px 2px;
+  padding: 11px 13px;
+  border-radius: 18px 18px 18px 8px;
   background: var(--chat-surface-strong);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
 }
 
 .bubbleUser {
-  border-radius: 12px 12px 2px 12px;
+  border-radius: 18px 18px 8px 18px;
   background: var(--chat-user);
+}
+
+.bubbleSolo {
+}
+
+.bubbleStart {
+  border-bottom-left-radius: 10px;
+}
+
+.bubbleMiddle {
+  border-radius: 10px 18px 18px 10px;
+}
+
+.bubbleEnd {
+  border-top-left-radius: 10px;
+}
+
+.bubbleUser.bubbleStart {
+  border-bottom-right-radius: 10px;
+}
+
+.bubbleUser.bubbleMiddle {
+  border-radius: 18px 10px 10px 18px;
+}
+
+.bubbleUser.bubbleEnd {
+  border-top-right-radius: 10px;
 }
 
 .bubbleSystem {
@@ -250,8 +278,8 @@
 .messageText {
   margin: 0;
   color: var(--chat-text);
-  font-size: 16px;
-  line-height: 1.55;
+  font-size: 15px;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -269,53 +297,81 @@
   color: var(--chat-text-soft);
   font-size: 11px;
   line-height: 1.2;
+  padding: 0 4px;
 }
 
+.auxCard,
 .systemNotice,
-.activityStrip {
+.activityStrip,
+.pendingSend {
   width: min(100%, 88%);
-  margin: 2px auto;
-  padding: 8px 12px;
-  border-radius: 12px;
-  background: transparent;
-  border: none;
-  text-align: center;
+  margin: 0 auto;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.07);
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.03);
+  text-align: left;
 }
 
 .systemNotice {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
+}
+
+.systemNoticeWarning {
+  background: color-mix(in srgb, var(--chat-warning-soft) 42%, white 58%);
+  border-color: color-mix(in srgb, var(--chat-warning) 18%, transparent 82%);
+}
+
+.auxCardMetaRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .systemNoticeHeader {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
+  min-width: 0;
 }
 
 .systemNoticeCopy {
   min-width: 0;
 }
 
+.auxCardBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--chat-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
 .systemNoticeCopy strong,
 .activityStripCopy strong {
   display: block;
-  font-size: 13px;
-  line-height: 1.25;
+  font-size: 14px;
+  line-height: 1.3;
 }
 
 .systemNoticeCopy p,
 .activityStripCopy p {
-  margin: 2px 0 0;
+  margin: 4px 0 0;
   color: var(--chat-text-muted);
-  font-size: 12px;
-  line-height: 1.4;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .systemNoticeTime,
-.activityStripTime {
+.activityStripTime,
+.pendingTime {
   flex: 0 0 auto;
   color: var(--chat-text-soft);
   font-size: 11px;
@@ -336,9 +392,9 @@
 }
 
 .activityStrip {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .activityStripNeutral {
@@ -366,8 +422,7 @@
 .pendingSend {
   max-width: min(100%, 78%);
   margin-left: auto;
-  padding: 10px 12px;
-  border-radius: 18px 18px 6px 18px;
+  border-radius: 18px 18px 10px 18px;
   background: rgba(202, 244, 181, 0.9);
   box-shadow: inset 0 0 0 1px rgba(7, 193, 96, 0.08);
 }
@@ -396,17 +451,28 @@
   margin-top: 8px;
 }
 
-.messageDetails > summary,
-.detailDisclosure > summary {
+.messageDetailsSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   cursor: pointer;
-  color: var(--chat-text-soft);
+  color: var(--chat-text-muted);
   font-size: 12px;
   list-style: none;
 }
 
-.messageDetails > summary::-webkit-details-marker,
-.detailDisclosure > summary::-webkit-details-marker {
+.messageDetailsSummary::-webkit-details-marker {
   display: none;
+}
+
+.messageDetailsSummaryLabel {
+  font-weight: 700;
+}
+
+.messageDetailsSummaryMeta {
+  color: var(--chat-text-soft);
+  text-align: right;
 }
 
 .detailList {
@@ -422,16 +488,33 @@
   background: rgba(255, 255, 255, 0.64);
 }
 
-.detailDisclosure > summary {
+.detailDisclosureSummary {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
+.detailKindPill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.05);
+  color: var(--chat-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.detailDisclosureTime {
+  color: var(--chat-text-soft);
+  font-size: 11px;
+}
+
 .detailTitle {
-  flex: 1 1 auto;
-  min-width: 0;
+  display: block;
+  margin-top: 8px;
   color: var(--chat-text);
   font-weight: 700;
 }

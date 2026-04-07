@@ -114,3 +114,10 @@
 - 截图证据已保存在 `output/playwright/feature11v3-projects.png`、`feature11v3-thread.png`、`feature11v3-skills.png`、`feature11v3-attachments.png`、`feature11v3-return-projects.png`；前一轮中间截图 `feature11v2-*` 也保留了 details/recent-chats 辅助证据。
 - 补充观察：`Recent chats` 的关闭行为在真实界面上是“回到线程页”，不是重新回到 `Chat info`；这一点与我最初脚本假设不同，但就产品流来说仍然满足“详情面板里可以进入最近聊天切换器”的验收要求。
 - 当前剩余状态：Phase 5 的 12 个 feature 已全部完成；之后如果还要继续做 mobile-web 体验优化，就不再是这份 PLAN.json 的范围，而是新的任务切片。
+
+## Session — 2026-04-07 23:42
+- 完成 harness closeout 前的最后一轮运行态修复：`scripts/start-mobile-web.sh` 默认从 `clean -> next dev` 切换为稳定的 `clean -> next build -> next start`，并保留 `CODEX_REMOTE_WEB_MODE=dev` 作为显式 watcher 覆盖。
+- 这次修改直接覆盖 `init.sh`、`stack:start:web` 和 `start-stack.sh` 的 web 启动路径，解决了无 TTY / 后台拉起时 3000 监听偶发消失的问题；前台和 `nohup` 两条路径都已复测。
+- 验证通过：`bash init.sh` 以 `errors: 0` 结束；`curl http://127.0.0.1:8787/health` 返回 `{"ok":true,"adapter":"codex-app-server"}`；`curl -I http://127.0.0.1:3000/projects` 返回 `200`；`8787` 和 `3000` 上的 `/api/overview` 都返回 `thread_count=202`、`shared_state_available=true`、`codex_home=/Users/miau/.codex`。
+- smoke 结果：`corepack pnpm --filter @codex-remote/mobile-web verify:smoke` 的 HTTP route 与 compact HTML 校验通过，但 browser screenshot 仍依赖 Playwright `chromium_headless_shell`；当前宿主下载该 runtime 时多次 `ECONNRESET` / connection closed，因此这轮 browser smoke 阻塞记录为外部下载失败，不视为页面回归。
+- 当前状态：功能与运行态收尾都已完成，可以按 harness 规则删除 `PLAN.json` 和 `PROGRESS.md` 并提交最终 cleanup。
